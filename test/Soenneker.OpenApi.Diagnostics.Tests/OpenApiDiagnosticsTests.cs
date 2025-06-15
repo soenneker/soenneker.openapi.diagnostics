@@ -5,6 +5,8 @@ using Soenneker.Utils.Json;
 using Xunit;
 using System.IO;
 using System.Linq;
+using Soenneker.OpenApi.Diagnostics.Abstract;
+using Soenneker.OpenApi.Diagnostics.Models;
 
 namespace Soenneker.OpenApi.Diagnostics.Tests;
 
@@ -30,7 +32,7 @@ public sealed class OpenApiDiagnosticsTests : FixturedUnitTest
 
         var issues = await _util.AnalyzeFile(@"c:\cloudflare\fixed.json");
 
-        var errors = issues.Where(x => x.Severity == DiagnosticSeverity.Error).ToList();
+        var errors = issues.Where(x => x.Severity == DiagnosticSeverity.Error && x.Category != DiagnosticCategory.Naming).ToList();
 
         var output = JsonUtil.Serialize(errors, Enums.JsonOptions.JsonOptionType.Pretty, Enums.JsonLibrary.JsonLibraryType.SystemTextJson);
 

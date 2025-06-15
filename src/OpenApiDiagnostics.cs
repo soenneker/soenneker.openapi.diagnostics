@@ -8,6 +8,10 @@ using System.Threading.Tasks;
 using Microsoft.OpenApi.Any;
 using Microsoft.OpenApi.Models;
 using Microsoft.OpenApi.Readers;
+using Soenneker.OpenApi.Diagnostics.Abstract;
+using Soenneker.OpenApi.Diagnostics.Analyzers;
+using Soenneker.OpenApi.Diagnostics.Analyzers.Abstract;
+using Soenneker.OpenApi.Diagnostics.Models;
 
 namespace Soenneker.OpenApi.Diagnostics;
 
@@ -15,119 +19,166 @@ namespace Soenneker.OpenApi.Diagnostics;
 /// A highly comprehensive OpenAPI diagnostic tool, with a focus on detecting issues
 /// that can cause problems for code generators like Kiota.
 /// </summary>
-public interface IOpenApiDiagnostics
-{
-    /// <summary>
-    //Analyzes an OpenAPI document from a JSON string.
-    //</summary>
-    /// <param name="openApiJson">The OpenAPI content as a JSON string.</param>
-    /// <returns>A list of diagnostic issues found in the document.</returns>
-    Task<List<OpenApiDiagnosticIssue>> Analyze(string openApiJson);
-
-    /// <summary>
-    //Analyzes an OpenAPI document from a stream.
-    //</summary>
-    /// <param name="openApiStream">The stream containing the OpenAPI document.</param>
-    /// <returns>A list of diagnostic issues found in the document.</returns>
-    Task<List<OpenApiDiagnosticIssue>> Analyze(Stream openApiStream);
-
-    /// <summary>
-    //Analyzes an OpenAPI document from a file.
-    // </summary>
-    /// <param name="fileInfo">A FileInfo object pointing to the OpenAPI document.</param>
-    /// <returns>A list of diagnostic issues found in the document.</returns>
-    Task<List<OpenApiDiagnosticIssue>> Analyze(FileInfo fileInfo);
-
-    /// <summary>
-    // Analyzes a pre-parsed OpenAPI document object.
-    // </summary>
-    /// <param name="document">The OpenApiDocument object.</param>
-    /// <returns>A list of diagnostic issues found in the document.</returns>
-    List<OpenApiDiagnosticIssue> Analyze(OpenApiDocument document);
-
-    Task<List<OpenApiDiagnosticIssue>> AnalyzeFile(string file);
-}
-
 /// <summary>
-/// A class representing a single issue found during OpenAPI document analysis.
+/// Service for analyzing OpenAPI documents and identifying potential issues
 /// </summary>
-public class OpenApiDiagnosticIssue
-{
-    public DiagnosticSeverity Severity { get; set; }
-    public DiagnosticCategory Category { get; set; }
-    public string Code { get; set; }
-    public string Message { get; set; }
-
-    /// <summary>
-    /// A JSON pointer-like location of the issue (e.g., "paths./users/{id}.get.operationId").
-    /// </summary>
-    public string Location { get; set; }
-
-    /// <summary>
-    /// The path of the component, if applicable (e.g., "/users/{id}").
-    /// </summary>
-    public string ComponentPath { get; set; }
-
-    /// <summary>
-    /// The name of the component, if applicable (e.g., "GetUserById").
-    /// </summary>
-    public string ComponentName { get; set; }
-
-    /// <summary>
-    /// The type of the component, if applicable (e.g., "schema", "operation").
-    /// </summary>
-    public string ComponentType { get; set; }
-}
-
-public enum DiagnosticCategory
-{
-    Structure,
-    Schema,
-    Path,
-    Operation,
-    Parameter,
-    Response,
-    Security,
-    Naming,
-    Kiota,
-    Other
-}
-
-public enum DiagnosticSeverity
-{
-    Error,
-    Warning,
-    Info
-}
-
-/// <inheritdoc cref="IOpenApiDiagnostics"/>
 public class OpenApiDiagnostics : IOpenApiDiagnostics
 {
-    private static readonly Regex ValidIdentifierRegex = new(@"^[a-zA-Z][a-zA-Z0-9_]*$", RegexOptions.Compiled);
-    private static readonly Regex PathParameterRegex = new(@"\{([^\}]+)\}", RegexOptions.Compiled);
+    private readonly OpenApiStringReader _reader;
+    private readonly ISchemaAnalyzer _schemaAnalyzer;
+    private readonly IPathAnalyzer _pathAnalyzer;
 
-    private static readonly HashSet<string> CsharpKeywords = new(StringComparer.Ordinal)
+    private static readonly Regex PathParameterRegex = new(@"\{([^}]+)\}", RegexOptions.Compiled);
+    private static readonly Regex ValidIdentifierRegex = new(@"^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.Compiled);
+
+    private static readonly HashSet<string> CsharpKeywords = new(StringComparer.OrdinalIgnoreCase)
     {
-        "abstract", "as", "base", "bool", "break", "byte", "case", "catch", "char", "checked", "class", "const", "continue",
-        "decimal", "default", "delegate", "do", "double", "else", "enum", "event", "explicit", "extern", "false", "finally",
-        "fixed", "float", "for", "foreach", "goto", "if", "implicit", "in", "int", "interface", "internal", "is", "lock",
-        "long", "namespace", "new", "null", "object", "operator", "out", "override", "params", "private", "protected",
-        "public", "readonly", "ref", "return", "sbyte", "sealed", "short", "sizeof", "stackalloc", "static", "string",
-        "struct", "switch", "this", "throw", "true", "try", "typeof", "uint", "ulong", "unchecked", "unsafe", "ushort",
-        "using", "virtual", "void", "volatile", "while"
+        "abstract", "as", "base", "bool", "break", "byte", "case", "catch", "char", "checked", "class", "const",
+        "continue", "decimal", "default", "delegate", "do", "double", "else", "enum", "event", "explicit", "extern",
+        "false", "finally", "fixed", "float", "for", "foreach", "goto", "if", "implicit", "in", "int", "interface",
+        "internal", "is", "lock", "long", "namespace", "new", "null", "object", "operator", "out", "override",
+        "params", "private", "protected", "public", "readonly", "ref", "return", "sbyte", "sealed", "short",
+        "sizeof", "stackalloc", "static", "string", "struct", "switch", "this", "throw", "true", "try", "typeof",
+        "uint", "ulong", "unchecked", "unsafe", "ushort", "using", "virtual", "void", "volatile", "while"
     };
 
-    /// <inheritdoc />
-    public async Task<List<OpenApiDiagnosticIssue>> Analyze(string openApiJson)
+    public OpenApiDiagnostics(ISchemaAnalyzer schemaAnalyzer, IPathAnalyzer pathAnalyzer)
     {
-        var stream = new MemoryStream(Encoding.UTF8.GetBytes(openApiJson));
-        return await Analyze(stream);
+        _reader = new OpenApiStringReader();
+        _schemaAnalyzer = schemaAnalyzer;
+        _pathAnalyzer = pathAnalyzer;
     }
 
+    /// <summary>
+    /// Analyzes an OpenAPI document from a JSON string
+    /// </summary>
+    public async Task<List<OpenApiDiagnosticIssue>> Analyze(string openApiJson)
+    {
+        var issues = new List<OpenApiDiagnosticIssue>();
+        try
+        {
+            var document = _reader.Read(openApiJson, out var diagnostic);
+            if (diagnostic.Errors.Any())
+            {
+                foreach (var error in diagnostic.Errors)
+                {
+                    issues.Add(new OpenApiDiagnosticIssue
+                    {
+                        Severity = DiagnosticSeverity.Error,
+                        Category = DiagnosticCategory.Structure,
+                        Code = "PARSE_ERROR",
+                        Message = error.Message,
+                        Location = error.Pointer
+                    });
+                }
+
+                return issues;
+            }
+
+            return await AnalyzeDocument(document);
+        }
+        catch (Exception ex)
+        {
+            issues.Add(new OpenApiDiagnosticIssue
+            {
+                Severity = DiagnosticSeverity.Error,
+                Category = DiagnosticCategory.Structure,
+                Code = "UNEXPECTED_ERROR",
+                Message = $"Unexpected error: {ex.Message}",
+                Location = ""
+            });
+            return issues;
+        }
+    }
+
+    /// <summary>
+    /// Analyzes an OpenAPI document from a file
+    /// </summary>
     public async Task<List<OpenApiDiagnosticIssue>> AnalyzeFile(string file)
     {
-        var data = File.OpenRead(file);
-        return await Analyze(data);
+        var json = await File.ReadAllTextAsync(file);
+        return await Analyze(json);
+    }
+
+    /// <summary>
+    /// Analyzes an OpenAPI document
+    /// </summary>
+    private async Task<List<OpenApiDiagnosticIssue>> AnalyzeDocument(OpenApiDocument document)
+    {
+        var issues = new List<OpenApiDiagnosticIssue>();
+        try
+        {
+            await AnalyzeDocumentStructure(document, issues);
+            await _schemaAnalyzer.AnalyzeSchemas(document, issues);
+            await _pathAnalyzer.AnalyzePaths(document, issues);
+            return issues;
+        }
+        catch (Exception ex)
+        {
+            issues.Add(new OpenApiDiagnosticIssue
+            {
+                Severity = DiagnosticSeverity.Error,
+                Category = DiagnosticCategory.Structure,
+                Code = "UNEXPECTED_ERROR",
+                Message = $"Unexpected error: {ex.Message}",
+                Location = ""
+            });
+            return issues;
+        }
+    }
+
+    /// <summary>
+    /// Analyzes the basic structure of the OpenAPI document
+    /// </summary>
+    private async Task AnalyzeDocumentStructure(OpenApiDocument document, List<OpenApiDiagnosticIssue> issues)
+    {
+        if (string.IsNullOrEmpty(document.Info?.Version))
+        {
+            issues.Add(new OpenApiDiagnosticIssue
+            {
+                Severity = DiagnosticSeverity.Error,
+                Category = DiagnosticCategory.Structure,
+                Code = "MISSING_VERSION",
+                Message = "OpenAPI version is missing",
+                Location = "info.version"
+            });
+        }
+
+        if (string.IsNullOrEmpty(document.Info?.Title))
+        {
+            issues.Add(new OpenApiDiagnosticIssue
+            {
+                Severity = DiagnosticSeverity.Warning,
+                Category = DiagnosticCategory.Structure,
+                Code = "MISSING_TITLE",
+                Message = "API title is missing",
+                Location = "info.title"
+            });
+        }
+
+        if (string.IsNullOrEmpty(document.Info?.Description))
+        {
+            issues.Add(new OpenApiDiagnosticIssue
+            {
+                Severity = DiagnosticSeverity.Warning,
+                Category = DiagnosticCategory.Structure,
+                Code = "MISSING_DESCRIPTION",
+                Message = "API description is missing",
+                Location = "info.description"
+            });
+        }
+
+        if (document.Servers == null || !document.Servers.Any())
+        {
+            issues.Add(new OpenApiDiagnosticIssue
+            {
+                Severity = DiagnosticSeverity.Warning,
+                Category = DiagnosticCategory.Structure,
+                Code = "NO_SERVERS",
+                Message = "No servers defined in the OpenAPI document",
+                Location = "servers"
+            });
+        }
     }
 
     /// <inheritdoc />
@@ -468,36 +519,100 @@ public class OpenApiDiagnostics : IOpenApiDiagnostics
 
     private void AnalyzeSchema(AnalysisContext context, OpenApiSchema schema, string schemaName, string location)
     {
-        // Build dependency graph for circular reference check
-        context.SchemaDependencies[schemaName] = new HashSet<string>();
-        foreach (var referencedSchema in schema.Properties.Values.Concat(schema.Items != null ? new[] {schema.Items} : Enumerable.Empty<OpenApiSchema>()))
+        if (schema == null) return;
+
+        // --- Dependency Graph Construction for Circular Reference Check ---
+        // Use a temporary set to avoid modifying the context's collection while iterating
+        var dependencies = new HashSet<string>();
+
+        // Check properties
+        if (schema.Properties != null)
         {
-            if (referencedSchema.Reference != null)
+            foreach (var prop in schema.Properties.Values)
             {
-                var refName = referencedSchema.Reference.Id;
-                context.SchemaDependencies[schemaName].Add(refName);
+                if (prop.Reference != null)
+                {
+                    dependencies.Add(prop.Reference.Id);
+                }
             }
         }
 
-        // Kiota check for untyped objects
-        if (schema.Type == "object" && (schema.Properties == null || !schema.Properties.Any()) &&
-            (schema.AdditionalPropertiesAllowed || schema.AdditionalProperties != null))
+        // Check array items
+        if (schema.Items?.Reference != null)
+        {
+            dependencies.Add(schema.Items.Reference.Id);
+        }
+
+        // Check composition schemas (allOf, anyOf, oneOf)
+        var compositionSchemas = (schema.AllOf ?? Enumerable.Empty<OpenApiSchema>()).Concat(schema.AnyOf ?? Enumerable.Empty<OpenApiSchema>())
+                                                                                    .Concat(schema.OneOf ?? Enumerable.Empty<OpenApiSchema>());
+
+        foreach (var compSchema in compositionSchemas)
+        {
+            if (compSchema.Reference != null)
+            {
+                dependencies.Add(compSchema.Reference.Id);
+            }
+        }
+
+        context.SchemaDependencies[schemaName] = dependencies;
+        // --- End of Dependency Graph Construction ---
+
+        // --- KIOTA-SPECIFIC AND CRITICAL CHECKS ---
+
+        // Check for untyped objects, which generate weak dictionaries
+        if (schema.Type == "object" && (schema.Properties == null || !schema.Properties.Any()) && schema.AdditionalProperties != null)
             context.AddIssue(DiagnosticSeverity.Warning, DiagnosticCategory.Kiota, "UNTYPED_OBJECT_SCHEMA",
                 $"Schema '{schemaName}' defines an untyped object (dictionary). This will generate a weakly-typed dictionary instead of a strong class.",
                 location, schemaName, "schema");
 
-        // Check for polymorphism without discriminator
-        if ((schema.OneOf != null && schema.OneOf.Any()) && schema.Discriminator == null)
+        // Check discriminator validity (a major source of Kiota errors)
+        if (schema.Discriminator != null)
+        {
+            var propName = schema.Discriminator.PropertyName;
+            if (string.IsNullOrWhiteSpace(propName))
+            {
+                context.AddIssue(DiagnosticSeverity.Error, DiagnosticCategory.Schema, "DISCRIMINATOR_MISSING_PROPERTY_NAME",
+                    $"Schema '{schemaName}' has a discriminator but it's missing a 'propertyName'.", location, schemaName, "schema");
+            }
+            // CRITICAL CHECK: The discriminator property MUST be in the 'required' list.
+            else if (schema.Required == null || !schema.Required.Contains(propName))
+            {
+                context.AddIssue(DiagnosticSeverity.Error, DiagnosticCategory.Kiota, "DISCRIMINATOR_PROPERTY_NOT_REQUIRED",
+                    $"The discriminator property '{propName}' must be in the 'required' list for the schema '{schemaName}'. Kiota will fail without this.",
+                    location, schemaName, "schema");
+            }
+        }
+        // Check for polymorphism without a discriminator
+        else if (schema.OneOf != null && schema.OneOf.Any())
+        {
             context.AddIssue(DiagnosticSeverity.Error, DiagnosticCategory.Kiota, "MISSING_DISCRIMINATOR",
-                $"Schema '{schemaName}' uses 'oneOf' for polymorphism but is missing a 'discriminator' object, which is required by Kiota.", location,
-                schemaName, "schema");
+                $"Schema '{schemaName}' uses 'oneOf' for polymorphism but is missing a 'discriminator' object, which is required by Kiota for code generation.",
+                location, schemaName, "schema");
+        }
 
+        // Check for invalid property names (causes Kiota crashes)
+        if (schema.Properties != null)
+        {
+            foreach (var property in schema.Properties)
+            {
+                if (string.IsNullOrWhiteSpace(property.Key))
+                {
+                    context.AddIssue(DiagnosticSeverity.Error, DiagnosticCategory.Kiota, "EMPTY_PROPERTY_NAME",
+                        $"Schema '{schemaName}' contains a property with an empty name. This will cause code generators to crash.", $"{location}.properties",
+                        schemaName, "schema");
+                }
+            }
+        }
+
+        // Check for invalid enum values (causes Kiota crashes)
         if (schema.Enum != null)
         {
             if (schema.Type == "string" && schema.Enum.OfType<OpenApiString>().Any(s => string.IsNullOrWhiteSpace(s.Value)))
             {
-                context.AddIssue(DiagnosticSeverity.Warning, DiagnosticCategory.Schema, "EMPTY_ENUM_VALUE",
-                    $"Enum in schema '{schemaName}' contains an empty or whitespace-only string value.", location, schemaName, "schema");
+                context.AddIssue(DiagnosticSeverity.Error, DiagnosticCategory.Kiota, "EMPTY_ENUM_VALUE",
+                    $"Enum in schema '{schemaName}' contains an empty or whitespace-only string value. This is invalid and will cause code generators to crash.",
+                    location, schemaName, "schema");
             }
         }
     }
@@ -613,6 +728,145 @@ public class OpenApiDiagnostics : IOpenApiDiagnostics
         return pascalCaseBuilder.ToString();
     }
 
+    private async Task AnalyzeEnums(OpenApiDocument document, List<OpenApiDiagnosticIssue> issues)
+    {
+        foreach (var schema in document.Components.Schemas)
+        {
+            await AnalyzeSchemaEnums(schema.Key, schema.Value, issues);
+        }
+    }
+
+    private async Task AnalyzeSchemaEnums(string schemaName, OpenApiSchema schema, List<OpenApiDiagnosticIssue> issues, string path = "")
+    {
+        if (schema == null) return;
+
+        var currentPath = string.IsNullOrEmpty(path) ? schemaName : $"{path}.{schemaName}";
+
+        // Check enum values
+        if (schema.Enum != null && schema.Enum.Any())
+        {
+            // Check for empty enum arrays
+            if (schema.Enum.Any(e => e is IList<object> list && list.Count == 0))
+            {
+                issues.Add(new OpenApiDiagnosticIssue
+                {
+                    Severity = DiagnosticSeverity.Error,
+                    Category = DiagnosticCategory.Schema,
+                    Code = "EMPTY_ENUM_ARRAY",
+                    Message = $"Schema '{currentPath}' contains an empty enum array value",
+                    Location = $"components.schemas.{currentPath}.enum",
+                    ComponentName = schemaName,
+                    ComponentType = "schema"
+                });
+            }
+
+            // Check for single-value enums
+            if (schema.Enum.Count == 1)
+            {
+                var value = schema.Enum.First();
+                var valueType = value?.GetType().Name ?? "null";
+
+                issues.Add(new OpenApiDiagnosticIssue
+                {
+                    Severity = DiagnosticSeverity.Warning,
+                    Category = DiagnosticCategory.Schema,
+                    Code = "SINGLE_VALUE_ENUM",
+                    Message = $"Schema '{currentPath}' has an enum with only one value ({valueType}: {value})",
+                    Location = $"components.schemas.{currentPath}.enum",
+                    ComponentName = schemaName,
+                    ComponentType = "schema"
+                });
+            }
+
+            // Check for boolean enums
+            if (schema.Enum.All(e => e is bool))
+            {
+                issues.Add(new OpenApiDiagnosticIssue
+                {
+                    Severity = DiagnosticSeverity.Warning,
+                    Category = DiagnosticCategory.Schema,
+                    Code = "BOOLEAN_ENUM",
+                    Message = $"Schema '{currentPath}' uses an enum for boolean values - consider using type: boolean instead",
+                    Location = $"components.schemas.{currentPath}.enum",
+                    ComponentName = schemaName,
+                    ComponentType = "schema"
+                });
+            }
+
+            // Check for nested arrays in enums
+            if (schema.Enum.Any(e => e is IList<object>))
+            {
+                issues.Add(new OpenApiDiagnosticIssue
+                {
+                    Severity = DiagnosticSeverity.Error,
+                    Category = DiagnosticCategory.Schema,
+                    Code = "NESTED_ARRAY_ENUM",
+                    Message = $"Schema '{currentPath}' contains nested arrays in enum values",
+                    Location = $"components.schemas.{currentPath}.enum",
+                    ComponentName = schemaName,
+                    ComponentType = "schema"
+                });
+            }
+
+            // Check for mixed types in enums
+            var types = schema.Enum.Select(e => e?.GetType().Name ?? "null").Distinct().ToList();
+            if (types.Count > 1)
+            {
+                issues.Add(new OpenApiDiagnosticIssue
+                {
+                    Severity = DiagnosticSeverity.Error,
+                    Category = DiagnosticCategory.Schema,
+                    Code = "MIXED_TYPE_ENUM",
+                    Message = $"Schema '{currentPath}' has enum values of mixed types: {string.Join(", ", types)}",
+                    Location = $"components.schemas.{currentPath}.enum",
+                    ComponentName = schemaName,
+                    ComponentType = "schema"
+                });
+            }
+        }
+
+        // Recursively check properties
+        if (schema.Properties != null)
+        {
+            foreach (var property in schema.Properties)
+            {
+                await AnalyzeSchemaEnums(property.Key, property.Value, issues, currentPath);
+            }
+        }
+
+        // Check items for array types
+        if (schema.Items != null)
+        {
+            await AnalyzeSchemaEnums("items", schema.Items, issues, currentPath);
+        }
+
+        // Check allOf
+        if (schema.AllOf != null)
+        {
+            for (int i = 0; i < schema.AllOf.Count; i++)
+            {
+                await AnalyzeSchemaEnums($"allOf[{i}]", schema.AllOf[i], issues, currentPath);
+            }
+        }
+
+        // Check oneOf
+        if (schema.OneOf != null)
+        {
+            for (int i = 0; i < schema.OneOf.Count; i++)
+            {
+                await AnalyzeSchemaEnums($"oneOf[{i}]", schema.OneOf[i], issues, currentPath);
+            }
+        }
+
+        // Check anyOf
+        if (schema.AnyOf != null)
+        {
+            for (int i = 0; i < schema.AnyOf.Count; i++)
+            {
+                await AnalyzeSchemaEnums($"anyOf[{i}]", schema.AnyOf[i], issues, currentPath);
+            }
+        }
+    }
 
     /// <summary>
     /// Holds the state for a single analysis run to ensure the main class is stateless.
