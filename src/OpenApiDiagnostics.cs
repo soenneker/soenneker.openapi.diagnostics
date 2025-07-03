@@ -22,7 +22,7 @@ namespace Soenneker.OpenApi.Diagnostics;
 /// <summary>
 /// Service for analyzing OpenAPI documents and identifying potential issues
 /// </summary>
-public class OpenApiDiagnostics : IOpenApiDiagnostics
+public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
 {
     private readonly OpenApiStringReader _reader;
     private readonly ISchemaAnalyzer _schemaAnalyzer;
