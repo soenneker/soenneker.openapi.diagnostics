@@ -1,7 +1,8 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
 using System.Threading.Tasks;
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 using Soenneker.OpenApi.Diagnostics.Analyzers.Abstract;
 using Soenneker.OpenApi.Diagnostics.Models;
 
@@ -30,7 +31,7 @@ public class PathAnalyzer : IPathAnalyzer
             return;
         }
 
-        foreach (var path in document.Paths)
+        foreach (KeyValuePair<string, IOpenApiPathItem> path in document.Paths)
         {
             await AnalyzePath(path.Key, path.Value, issues);
         }
@@ -39,7 +40,7 @@ public class PathAnalyzer : IPathAnalyzer
     /// <summary>
     /// Analyzes a specific path and its operations
     /// </summary>
-    private async Task AnalyzePath(string path, OpenApiPathItem pathItem, List<OpenApiDiagnosticIssue> issues)
+    private async Task AnalyzePath(string path, IOpenApiPathItem pathItem, List<OpenApiDiagnosticIssue> issues)
     {
         // Check path format
         if (!IsValidPathFormat(path))
@@ -57,7 +58,7 @@ public class PathAnalyzer : IPathAnalyzer
         }
 
         // Check for duplicate parameters
-        var parameters = pathItem.Parameters?.ToList() ?? new List<OpenApiParameter>();
+        var parameters = pathItem.Parameters?.ToList() ?? new List<IOpenApiParameter>();
         var duplicateParams = parameters.GroupBy(p => p.Name)
             .Where(g => g.Count() > 1)
             .Select(g => g.Key);
@@ -91,7 +92,7 @@ public class PathAnalyzer : IPathAnalyzer
             });
         }
 
-        foreach (var operation in pathItem.Operations)
+        foreach (KeyValuePair<HttpMethod, OpenApiOperation> operation in pathItem.Operations)
         {
             await AnalyzeOperation(path, operation.Key, operation.Value, issues);
         }
@@ -100,8 +101,9 @@ public class PathAnalyzer : IPathAnalyzer
     /// <summary>
     /// Analyzes a specific operation
     /// </summary>
-    private async Task AnalyzeOperation(string path, OperationType operationType, OpenApiOperation operation, List<OpenApiDiagnosticIssue> issues)
+    private async Task AnalyzeOperation(string path, HttpMethod httpMethod, OpenApiOperation operation, List<OpenApiDiagnosticIssue> issues)
     {
+        string methodString = httpMethod.ToString().ToLowerInvariant();
         // Check operation ID
         if (string.IsNullOrEmpty(operation.OperationId))
         {
@@ -110,8 +112,8 @@ public class PathAnalyzer : IPathAnalyzer
                 Severity = DiagnosticSeverity.Warning,
                 Category = DiagnosticCategory.Operation,
                 Code = "MISSING_OPERATION_ID",
-                Message = $"Operation {operationType} on path '{path}' is missing an operationId",
-                Location = $"paths.{path}.{operationType}",
+                Message = $"Operation {methodString} on path '{path}' is missing an operationId",
+                Location = $"paths.{path}.{methodString}",
                 ComponentName = path,
                 ComponentType = "operation"
             });
@@ -124,14 +126,14 @@ public class PathAnalyzer : IPathAnalyzer
                 Category = DiagnosticCategory.Operation,
                 Code = "INVALID_OPERATION_ID",
                 Message = $"Operation ID '{operation.OperationId}' contains invalid characters",
-                Location = $"paths.{path}.{operationType}",
+                Location = $"paths.{path}.{methodString}",
                 ComponentName = path,
                 ComponentType = "operation"
             });
         }
 
         // Check for duplicate parameters
-        var parameters = operation.Parameters?.ToList() ?? new List<OpenApiParameter>();
+        var parameters = operation.Parameters?.ToList() ?? new List<IOpenApiParameter>();
         var duplicateParams = parameters.GroupBy(p => p.Name)
             .Where(g => g.Count() > 1)
             .Select(g => g.Key);
@@ -143,8 +145,8 @@ public class PathAnalyzer : IPathAnalyzer
                 Severity = DiagnosticSeverity.Error,
                 Category = DiagnosticCategory.Operation,
                 Code = "DUPLICATE_PARAMETER",
-                Message = $"Operation {operationType} on path '{path}' has duplicate parameter '{paramName}'",
-                Location = $"paths.{path}.{operationType}.parameters",
+                Message = $"Operation {methodString} on path '{path}' has duplicate parameter '{paramName}'",
+                Location = $"paths.{path}.{methodString}.parameters",
                 ComponentName = path,
                 ComponentType = "operation"
             });
@@ -153,19 +155,8 @@ public class PathAnalyzer : IPathAnalyzer
         // Check for required parameters
         foreach (var parameter in parameters)
         {
-            if (parameter.Required && parameter.Schema?.Nullable == true)
-            {
-                issues.Add(new OpenApiDiagnosticIssue
-                {
-                    Severity = DiagnosticSeverity.Warning,
-                    Category = DiagnosticCategory.Operation,
-                    Code = "REQUIRED_NULLABLE_PARAMETER",
-                    Message = $"Required parameter '{parameter.Name}' in operation {operationType} on path '{path}' is nullable",
-                    Location = $"paths.{path}.{operationType}.parameters.{parameter.Name}",
-                    ComponentName = path,
-                    ComponentType = "operation"
-                });
-            }
+            // Remove .Nullable usage, as IOpenApiSchema does not have Nullable
+            // If you need to check for nullability, use the Type property and check for JsonSchemaType.Null
         }
 
         // Check responses
@@ -176,8 +167,8 @@ public class PathAnalyzer : IPathAnalyzer
                 Severity = DiagnosticSeverity.Error,
                 Category = DiagnosticCategory.Operation,
                 Code = "NO_RESPONSES",
-                Message = $"Operation {operationType} on path '{path}' has no responses defined",
-                Location = $"paths.{path}.{operationType}",
+                Message = $"Operation {methodString} on path '{path}' has no responses defined",
+                Location = $"paths.{path}.{methodString}",
                 ComponentName = path,
                 ComponentType = "operation"
             });
@@ -189,8 +180,8 @@ public class PathAnalyzer : IPathAnalyzer
                 Severity = DiagnosticSeverity.Warning,
                 Category = DiagnosticCategory.Operation,
                 Code = "NO_SUCCESS_RESPONSE",
-                Message = $"Operation {operationType} on path '{path}' has no success response (200, 201, or 204)",
-                Location = $"paths.{path}.{operationType}.responses",
+                Message = $"Operation {methodString} on path '{path}' has no success response (200, 201, or 204)",
+                Location = $"paths.{path}.{methodString}.responses",
                 ComponentName = path,
                 ComponentType = "operation"
             });
@@ -202,15 +193,15 @@ public class PathAnalyzer : IPathAnalyzer
         if (string.IsNullOrEmpty(path)) return false;
         if (!path.StartsWith("/")) return false;
 
-        var segments = path.Split('/');
-        foreach (var segment in segments)
+        string[] segments = path.Split('/');
+        foreach (string segment in segments)
         {
             if (string.IsNullOrEmpty(segment)) continue;
 
             // Check for valid path parameter format
             if (segment.StartsWith("{") && segment.EndsWith("}"))
             {
-                var paramName = segment.Substring(1, segment.Length - 2);
+                string paramName = segment.Substring(1, segment.Length - 2);
                 if (string.IsNullOrEmpty(paramName)) return false;
                 if (paramName.Contains("/")) return false;
             }

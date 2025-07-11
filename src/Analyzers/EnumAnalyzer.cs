@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 using Soenneker.OpenApi.Diagnostics.Analyzers.Abstract;
 using Soenneker.OpenApi.Diagnostics.Models;
 
@@ -27,16 +27,16 @@ public class EnumAnalyzer : IEnumAnalyzer
     /// <summary>
     /// Analyzes enums in a specific schema and its nested schemas
     /// </summary>
-    private async Task AnalyzeSchemaEnums(string schemaName, OpenApiSchema schema, List<OpenApiDiagnosticIssue> issues, HashSet<string> visited, string path = "")
+    private async Task AnalyzeSchemaEnums(string schemaName, IOpenApiSchema schema, List<OpenApiDiagnosticIssue> issues, HashSet<string> visited, string path = "")
     {
         if (schema == null) return;
 
-        var currentPath = string.IsNullOrEmpty(path) ? schemaName : $"{path}.{schemaName}";
+        string currentPath = string.IsNullOrEmpty(path) ? schemaName : $"{path}.{schemaName}";
         
         // Prevent infinite recursion by tracking visited schemas
-        if (schema.Reference != null)
+        if (schema is OpenApiSchemaReference refSchema)
         {
-            var refPath = schema.Reference.Id;
+            var refPath = refSchema.Id;
             if (!visited.Add(refPath))
             {
                 return; // Skip if we've already visited this schema
@@ -65,7 +65,7 @@ public class EnumAnalyzer : IEnumAnalyzer
             if (schema.Enum.Count == 1)
             {
                 var value = schema.Enum.First();
-                var valueType = value?.GetType().Name ?? "null";
+                string? valueType = value?.GetType().Name ?? "null";
                 
                 issues.Add(new OpenApiDiagnosticIssue
                 {

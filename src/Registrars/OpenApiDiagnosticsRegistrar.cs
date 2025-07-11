@@ -1,6 +1,5 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.OpenApi.Readers;
 using Soenneker.OpenApi.Diagnostics.Abstract;
 using Soenneker.OpenApi.Diagnostics.Analyzers;
 using Soenneker.OpenApi.Diagnostics.Analyzers.Abstract;

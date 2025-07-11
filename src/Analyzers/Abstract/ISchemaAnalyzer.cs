@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 using Soenneker.OpenApi.Diagnostics.Models;
 
 namespace Soenneker.OpenApi.Diagnostics.Analyzers.Abstract;

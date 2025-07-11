@@ -2,14 +2,13 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Text;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using Microsoft.OpenApi.Any;
-using Microsoft.OpenApi.Models;
-using Microsoft.OpenApi.Readers;
+using Microsoft.OpenApi;
 using Soenneker.OpenApi.Diagnostics.Abstract;
-using Soenneker.OpenApi.Diagnostics.Analyzers;
 using Soenneker.OpenApi.Diagnostics.Analyzers.Abstract;
 using Soenneker.OpenApi.Diagnostics.Models;
 
@@ -24,7 +23,6 @@ namespace Soenneker.OpenApi.Diagnostics;
 /// </summary>
 public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
 {
-    private readonly OpenApiStringReader _reader;
     private readonly ISchemaAnalyzer _schemaAnalyzer;
     private readonly IPathAnalyzer _pathAnalyzer;
 
@@ -44,7 +42,6 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
 
     public OpenApiDiagnostics(ISchemaAnalyzer schemaAnalyzer, IPathAnalyzer pathAnalyzer)
     {
-        _reader = new OpenApiStringReader();
         _schemaAnalyzer = schemaAnalyzer;
         _pathAnalyzer = pathAnalyzer;
     }
@@ -57,8 +54,9 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
         var issues = new List<OpenApiDiagnosticIssue>();
         try
         {
-            var document = _reader.Read(openApiJson, out var diagnostic);
-            if (diagnostic.Errors.Any())
+            using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(openApiJson));
+            var (document, diagnostic) = await OpenApiDocument.LoadAsync(stream);
+            if (diagnostic is not null && diagnostic.Errors is not null && diagnostic.Errors.Any())
             {
                 foreach (var error in diagnostic.Errors)
                 {
@@ -71,10 +69,8 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
                         Location = error.Pointer
                     });
                 }
-
                 return issues;
             }
-
             return await AnalyzeDocument(document);
         }
         catch (Exception ex)
@@ -96,7 +92,7 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
     /// </summary>
     public async Task<List<OpenApiDiagnosticIssue>> AnalyzeFile(string file)
     {
-        var json = await File.ReadAllTextAsync(file);
+        string json = await File.ReadAllTextAsync(file);
         return await Analyze(json);
     }
 
@@ -184,12 +180,11 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
     /// <inheritdoc />
     public async Task<List<OpenApiDiagnosticIssue>> Analyze(Stream openApiStream)
     {
-        var reader = new OpenApiStreamReader();
-        var result = await reader.ReadAsync(openApiStream);
-
-        if (result.OpenApiDiagnostic.Errors.Any())
+        var (document, diagnostic) = await OpenApiDocument.LoadAsync(openApiStream);
+        var issues = new List<OpenApiDiagnosticIssue>();
+        if (diagnostic is not null && diagnostic.Errors is not null && diagnostic.Errors.Any())
         {
-            return result.OpenApiDiagnostic.Errors.Select(error => new OpenApiDiagnosticIssue
+            return diagnostic.Errors.Select(error => new OpenApiDiagnosticIssue
                          {
                              Severity = DiagnosticSeverity.Error,
                              Category = DiagnosticCategory.Structure,
@@ -200,7 +195,7 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
                          .ToList();
         }
 
-        return Analyze(result.OpenApiDocument);
+        return await AnalyzeDocument(document);
     }
 
     /// <inheritdoc />
@@ -220,7 +215,7 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
             };
         }
 
-        await using var stream = fileInfo.OpenRead();
+        await using FileStream stream = fileInfo.OpenRead();
         return await Analyze(stream);
     }
 
@@ -303,45 +298,45 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
 
     private void AnalyzePathsAndOperations(AnalysisContext context)
     {
-        foreach (var path in context.Document.Paths)
+        foreach (KeyValuePair<string, IOpenApiPathItem> path in context.Document.Paths)
         {
             string pathKey = path.Key;
-            var pathItem = path.Value;
+            IOpenApiPathItem pathItem = path.Value;
             string pathLocation = $"paths.{pathKey}";
 
             if (!pathKey.StartsWith("/"))
                 context.AddIssue(DiagnosticSeverity.Error, DiagnosticCategory.Path, "INVALID_PATH_START", "Path must start with a '/' character.",
                     pathLocation);
 
-            var pathPlaceholders = PathParameterRegex.Matches(pathKey).Cast<Match>().Select(m => m.Groups[1].Value).ToHashSet();
+            HashSet<string> pathPlaceholders = PathParameterRegex.Matches(pathKey).Cast<Match>().Select(m => m.Groups[1].Value).ToHashSet();
 
-            var pathLevelParams = pathItem.Parameters.Select(p => p.Name).ToHashSet();
+            HashSet<string?> pathLevelParams = pathItem.Parameters.Select(p => p.Name).ToHashSet();
 
-            foreach (var operation in pathItem.Operations)
+            foreach (KeyValuePair<HttpMethod, OpenApiOperation> operation in pathItem.Operations)
             {
-                var op = operation.Value;
+                OpenApiOperation op = operation.Value;
                 string opType = operation.Key.ToString().ToLowerInvariant();
                 string opLocation = $"{pathLocation}.{opType}";
 
                 AnalyzeOperation(context, op, opType, pathKey, opLocation);
 
                 // Validate path parameters are correctly defined for the operation
-                var allParams = op.Parameters.ToDictionary(p => (p.Name, p.In), p => p);
-                foreach (var pathParam in pathItem.Parameters)
+                Dictionary<(string? Name, ParameterLocation? In), IOpenApiParameter> allParams = op.Parameters.ToDictionary(p => (p.Name, p.In), p => p);
+                foreach (OpenApiParameter pathParam in pathItem.Parameters)
                 {
                     allParams.TryAdd((pathParam.Name, pathParam.In), pathParam);
                 }
 
-                var definedPathParams = allParams.Values.Where(p => p.In == ParameterLocation.Path).Select(p => p.Name).ToHashSet();
+                HashSet<string?> definedPathParams = allParams.Values.Where(p => p.In == ParameterLocation.Path).Select(p => p.Name).ToHashSet();
 
-                var missingParams = pathPlaceholders.Except(definedPathParams);
-                foreach (var missing in missingParams)
+                IEnumerable<string> missingParams = pathPlaceholders.Except(definedPathParams);
+                foreach (string missing in missingParams)
                     context.AddIssue(DiagnosticSeverity.Error, DiagnosticCategory.Path, "MISSING_PATH_PARAMETER",
                         $"Path '{pathKey}' specifies placeholder '{{{missing}}}' but it is not defined as a path parameter for the operation.", opLocation,
                         componentName: op.OperationId);
 
-                var extraParams = definedPathParams.Except(pathPlaceholders);
-                foreach (var extra in extraParams)
+                IEnumerable<string?> extraParams = definedPathParams.Except(pathPlaceholders);
+                foreach (string? extra in extraParams)
                     context.AddIssue(DiagnosticSeverity.Error, DiagnosticCategory.Path, "UNDEFINED_PATH_PARAMETER",
                         $"Operation defines path parameter '{extra}' but it is not present as a placeholder in the path '{pathKey}'.",
                         $"{opLocation}.parameters", componentName: op.OperationId);
@@ -380,14 +375,14 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
         AnalyzeResponses(context, op.Responses, op.OperationId, opLocation);
     }
 
-    private void AnalyzeParameters(AnalysisContext context, IList<OpenApiParameter> parameters, string operationId, string location)
+    private void AnalyzeParameters(AnalysisContext context, IList<IOpenApiParameter> parameters, string operationId, string location)
     {
         if (parameters == null) return;
 
         var seenParams = new HashSet<(string Name, ParameterLocation In)>();
-        foreach (var parameter in parameters)
+        foreach (IOpenApiParameter parameter in parameters)
         {
-            if (parameter.Reference != null) continue; // Assume referenced parameters are valid.
+            if (parameter is OpenApiParameterReference) continue; // Assume referenced parameters are valid.
 
             if (string.IsNullOrWhiteSpace(parameter.Name))
             {
@@ -409,7 +404,7 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
             if (parameter.Schema == null)
                 context.AddIssue(DiagnosticSeverity.Error, DiagnosticCategory.Parameter, "MISSING_PARAMETER_SCHEMA",
                     $"Parameter '{parameter.Name}' is missing a 'schema'.", $"{location}.parameters", operationId);
-            else if (parameter.Schema.Reference == null && parameter.Schema.Type == "object" && parameter.Schema.Properties != null &&
+            else if (!(parameter.Schema is OpenApiSchemaReference) && parameter.Schema.Type == JsonSchemaType.Object && parameter.Schema.Properties != null &&
                      parameter.Schema.Properties.Any())
                 context.AddIssue(DiagnosticSeverity.Warning, DiagnosticCategory.Kiota, "INLINE_COMPLEX_PARAMETER_SCHEMA",
                     $"Parameter '{parameter.Name}' uses a complex inline schema. For best code generation results, define this as a reusable component in '#/components/schemas'.",
@@ -426,7 +421,7 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
             return;
         }
 
-        var successCodes = responses.Keys.Count(k => k.StartsWith("2"));
+        int successCodes = responses.Keys.Count(k => k.StartsWith("2"));
         if (successCodes == 0)
             context.AddIssue(DiagnosticSeverity.Warning, DiagnosticCategory.Response, "NO_SUCCESS_RESPONSE",
                 "Operation does not define any 2xx success responses.", opLocation, operationId);
@@ -436,7 +431,7 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
                 "Operation defines multiple 2xx success responses. This can lead to ambiguous, weakly-typed return types (e.g., object or union types) in generated code.",
                 opLocation, operationId);
 
-        foreach (var response in responses)
+        foreach (KeyValuePair<string, IOpenApiResponse> response in responses)
         {
             var responseLocation = $"{opLocation}.responses.{response.Key}";
             AnalyzeContent(context, response.Value.Content, $"{responseLocation}.content", operationId, isRequest: false);
@@ -453,10 +448,10 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
             return;
         }
 
-        foreach (var mediaType in content)
+        foreach (KeyValuePair<string, OpenApiMediaType> mediaType in content)
         {
             var mediaTypeLocation = $"{location}.{mediaType.Key}";
-            var schema = mediaType.Value.Schema;
+            IOpenApiSchema? schema = mediaType.Value.Schema;
 
             if (schema == null)
             {
@@ -466,13 +461,13 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
             }
 
             // Kiota check for inline complex schemas
-            if (schema.Reference == null && schema.Type == "object" && schema.Properties != null && schema.Properties.Any())
+            if (!(schema is OpenApiSchemaReference) && schema.Type == JsonSchemaType.Object && schema.Properties != null && schema.Properties.Any())
                 context.AddIssue(DiagnosticSeverity.Warning, DiagnosticCategory.Kiota, "INLINE_COMPLEX_SCHEMA",
                     "A complex schema is defined inline. For better, reusable generated code, define this in '#/components/schemas' and use a $ref.",
                     mediaTypeLocation, operationId);
 
             // Kiota check for binary formats
-            if (schema.Type == "string" && (schema.Format == "binary" || schema.Format == "byte") && mediaType.Key.ToLowerInvariant().Contains("json"))
+            if (schema.Type == JsonSchemaType.String && (schema.Format == "binary" || schema.Format == "byte") && mediaType.Key.ToLowerInvariant().Contains("json"))
                 context.AddIssue(DiagnosticSeverity.Warning, DiagnosticCategory.Kiota, "BINARY_IN_JSON",
                     $"The schema indicates binary content ('{schema.Format}'), but the content type is '{mediaType.Key}'. Consider using 'application/octet-stream' or another binary-friendly media type.",
                     mediaTypeLocation, operationId);
@@ -481,15 +476,15 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
 
     private void AnalyzeComponents(AnalysisContext context)
     {
-        var schemas = context.Document.Components?.Schemas;
+        IDictionary<string, IOpenApiSchema>? schemas = context.Document.Components?.Schemas;
         if (schemas == null) return;
 
         var normalizedSchemaNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var schema in schemas)
+        foreach (KeyValuePair<string, IOpenApiSchema> schema in schemas)
         {
             string name = schema.Key;
-            var schemaDef = schema.Value;
+            IOpenApiSchema schemaDef = schema.Value;
             string location = $"#/components/schemas/{name}";
 
             if (!ValidIdentifierRegex.IsMatch(name))
@@ -502,7 +497,7 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
                     $"Schema name '{name}' is a C# reserved keyword, which may cause issues during code generation.", location, name, "schema");
 
             string normalized = SanitizeAndConvertToPascalCase(name);
-            if (normalizedSchemaNames.TryGetValue(normalized, out var existingName))
+            if (normalizedSchemaNames.TryGetValue(normalized, out string? existingName))
             {
                 context.AddIssue(DiagnosticSeverity.Error, DiagnosticCategory.Kiota, "NORMALIZED_NAME_COLLISION",
                     $"Schema name '{name}' results in the name '{normalized}' after normalization, which conflicts with schema '{existingName}'. This will cause a type name collision in generated code.",
@@ -517,12 +512,10 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
         }
     }
 
-    private void AnalyzeSchema(AnalysisContext context, OpenApiSchema schema, string schemaName, string location)
+    private void AnalyzeSchema(AnalysisContext context, IOpenApiSchema schema, string schemaName, string location)
     {
         if (schema == null) return;
 
-        // --- Dependency Graph Construction for Circular Reference Check ---
-        // Use a temporary set to avoid modifying the context's collection while iterating
         var dependencies = new HashSet<string>();
 
         // Check properties
@@ -530,52 +523,48 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
         {
             foreach (var prop in schema.Properties.Values)
             {
-                if (prop.Reference != null)
+                if (prop is OpenApiSchemaReference propRef)
                 {
-                    dependencies.Add(prop.Reference.Id);
+                    dependencies.Add(propRef.Id);
                 }
             }
         }
 
         // Check array items
-        if (schema.Items?.Reference != null)
+        if (schema.Items is OpenApiSchemaReference itemsRef)
         {
-            dependencies.Add(schema.Items.Reference.Id);
+            dependencies.Add(itemsRef.Id);
         }
 
         // Check composition schemas (allOf, anyOf, oneOf)
-        var compositionSchemas = (schema.AllOf ?? Enumerable.Empty<OpenApiSchema>()).Concat(schema.AnyOf ?? Enumerable.Empty<OpenApiSchema>())
-                                                                                    .Concat(schema.OneOf ?? Enumerable.Empty<OpenApiSchema>());
+        var compositionSchemas = (schema.AllOf ?? Enumerable.Empty<IOpenApiSchema>())
+            .Concat(schema.AnyOf ?? Enumerable.Empty<IOpenApiSchema>())
+            .Concat(schema.OneOf ?? Enumerable.Empty<IOpenApiSchema>());
 
         foreach (var compSchema in compositionSchemas)
         {
-            if (compSchema.Reference != null)
+            if (compSchema is OpenApiSchemaReference compRef)
             {
-                dependencies.Add(compSchema.Reference.Id);
+                dependencies.Add(compRef.Id);
             }
         }
 
         context.SchemaDependencies[schemaName] = dependencies;
-        // --- End of Dependency Graph Construction ---
 
         // --- KIOTA-SPECIFIC AND CRITICAL CHECKS ---
-
-        // Check for untyped objects, which generate weak dictionaries
-        if (schema.Type == "object" && (schema.Properties == null || !schema.Properties.Any()) && schema.AdditionalProperties != null)
+        if (schema.Type == JsonSchemaType.Object && (schema.Properties == null || !schema.Properties.Any()) && schema.AdditionalProperties != null)
             context.AddIssue(DiagnosticSeverity.Warning, DiagnosticCategory.Kiota, "UNTYPED_OBJECT_SCHEMA",
                 $"Schema '{schemaName}' defines an untyped object (dictionary). This will generate a weakly-typed dictionary instead of a strong class.",
                 location, schemaName, "schema");
 
-        // Check discriminator validity (a major source of Kiota errors)
         if (schema.Discriminator != null)
         {
-            var propName = schema.Discriminator.PropertyName;
+            string? propName = schema.Discriminator.PropertyName;
             if (string.IsNullOrWhiteSpace(propName))
             {
                 context.AddIssue(DiagnosticSeverity.Error, DiagnosticCategory.Schema, "DISCRIMINATOR_MISSING_PROPERTY_NAME",
                     $"Schema '{schemaName}' has a discriminator but it's missing a 'propertyName'.", location, schemaName, "schema");
             }
-            // CRITICAL CHECK: The discriminator property MUST be in the 'required' list.
             else if (schema.Required == null || !schema.Required.Contains(propName))
             {
                 context.AddIssue(DiagnosticSeverity.Error, DiagnosticCategory.Kiota, "DISCRIMINATOR_PROPERTY_NOT_REQUIRED",
@@ -583,7 +572,6 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
                     location, schemaName, "schema");
             }
         }
-        // Check for polymorphism without a discriminator
         else if (schema.OneOf != null && schema.OneOf.Any())
         {
             context.AddIssue(DiagnosticSeverity.Error, DiagnosticCategory.Kiota, "MISSING_DISCRIMINATOR",
@@ -591,7 +579,6 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
                 location, schemaName, "schema");
         }
 
-        // Check for invalid property names (causes Kiota crashes)
         if (schema.Properties != null)
         {
             foreach (var property in schema.Properties)
@@ -605,10 +592,9 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
             }
         }
 
-        // Check for invalid enum values (causes Kiota crashes)
         if (schema.Enum != null)
         {
-            if (schema.Type == "string" && schema.Enum.OfType<OpenApiString>().Any(s => string.IsNullOrWhiteSpace(s.Value)))
+            if (schema.Type == JsonSchemaType.String && schema.Enum.OfType<string>().Any(s => string.IsNullOrWhiteSpace(s)))
             {
                 context.AddIssue(DiagnosticSeverity.Error, DiagnosticCategory.Kiota, "EMPTY_ENUM_VALUE",
                     $"Enum in schema '{schemaName}' contains an empty or whitespace-only string value. This is invalid and will cause code generators to crash.",
@@ -619,8 +605,8 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
 
     private void AnalyzeCircularDependencies(AnalysisContext context)
     {
-        var nodes = context.SchemaDependencies.Keys.ToList();
-        foreach (var node in nodes)
+        List<string> nodes = context.SchemaDependencies.Keys.ToList();
+        foreach (string node in nodes)
         {
             var path = new List<string>();
             FindCycles(node, path, context);
@@ -631,18 +617,18 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
     {
         path.Add(currentNode);
 
-        if (context.SchemaDependencies.TryGetValue(currentNode, out var dependencies))
+        if (context.SchemaDependencies.TryGetValue(currentNode, out HashSet<string>? dependencies))
         {
-            foreach (var dependency in dependencies)
+            foreach (string dependency in dependencies)
             {
                 int cycleStartIndex = path.IndexOf(dependency);
                 if (cycleStartIndex != -1)
                 {
-                    var cycle = path.GetRange(cycleStartIndex, path.Count - cycleStartIndex);
+                    List<string> cycle = path.GetRange(cycleStartIndex, path.Count - cycleStartIndex);
                     cycle.Add(dependency); // Close the loop
 
                     // Create a canonical key for the cycle to report it only once
-                    var canonicalKey = string.Join("->", cycle.Distinct().OrderBy(n => n));
+                    string canonicalKey = string.Join("->", cycle.Distinct().OrderBy(n => n));
                     if (context.ReportedCycles.Add(canonicalKey))
                     {
                         string cyclePath = string.Join(" -> ", cycle);
@@ -665,7 +651,7 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
     {
         if (context.Document.Components?.SecuritySchemes == null || !context.Document.Components.SecuritySchemes.Any()) return;
 
-        foreach (var scheme in context.Document.Components.SecuritySchemes)
+        foreach (KeyValuePair<string, IOpenApiSecurityScheme> scheme in context.Document.Components.SecuritySchemes)
         {
             if (scheme.Value.Type == SecuritySchemeType.OAuth2 && scheme.Value.Flows == null)
             {
@@ -682,7 +668,7 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
         var definedTags = new HashSet<string>(context.Document.Tags.Select(t => t.Name), StringComparer.Ordinal);
         if (!definedTags.Any()) return;
 
-        foreach (var op in context.Document.Paths.Values.SelectMany(p => p.Operations.Values))
+        foreach (OpenApiOperation op in context.Document.Paths.Values.SelectMany(p => p.Operations.Values))
         {
             if (op.Tags == null || !op.Tags.Any())
             {
@@ -691,7 +677,7 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
                 continue;
             }
 
-            foreach (var tag in op.Tags)
+            foreach (OpenApiTagReference tag in op.Tags)
             {
                 if (!definedTags.Contains(tag.Name))
                 {
@@ -711,12 +697,12 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
         if (string.IsNullOrEmpty(name)) return string.Empty;
 
         // Split by non-alphanumeric characters
-        var parts = Regex.Split(name, @"[^\w]").Where(p => !string.IsNullOrEmpty(p)).ToList();
+        List<string> parts = Regex.Split(name, @"[^\w]").Where(p => !string.IsNullOrEmpty(p)).ToList();
 
         if (!parts.Any()) return string.Empty;
 
         var pascalCaseBuilder = new StringBuilder();
-        foreach (var part in parts)
+        foreach (string part in parts)
         {
             pascalCaseBuilder.Append(char.ToUpperInvariant(part[0]));
             if (part.Length > 1)
@@ -730,22 +716,18 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
 
     private async Task AnalyzeEnums(OpenApiDocument document, List<OpenApiDiagnosticIssue> issues)
     {
-        foreach (var schema in document.Components.Schemas)
+        foreach (KeyValuePair<string, IOpenApiSchema> schema in document.Components.Schemas)
         {
             await AnalyzeSchemaEnums(schema.Key, schema.Value, issues);
         }
     }
 
-    private async Task AnalyzeSchemaEnums(string schemaName, OpenApiSchema schema, List<OpenApiDiagnosticIssue> issues, string path = "")
+    private async Task AnalyzeSchemaEnums(string schemaName, IOpenApiSchema schema, List<OpenApiDiagnosticIssue> issues, string path = "")
     {
         if (schema == null) return;
-
-        var currentPath = string.IsNullOrEmpty(path) ? schemaName : $"{path}.{schemaName}";
-
-        // Check enum values
+        string currentPath = string.IsNullOrEmpty(path) ? schemaName : $"{path}.{schemaName}";
         if (schema.Enum != null && schema.Enum.Any())
         {
-            // Check for empty enum arrays
             if (schema.Enum.Any(e => e is IList<object> list && list.Count == 0))
             {
                 issues.Add(new OpenApiDiagnosticIssue
@@ -759,13 +741,10 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
                     ComponentType = "schema"
                 });
             }
-
-            // Check for single-value enums
             if (schema.Enum.Count == 1)
             {
-                var value = schema.Enum.First();
-                var valueType = value?.GetType().Name ?? "null";
-
+                JsonNode? value = schema.Enum.First();
+                string? valueType = value?.GetType().Name ?? "null";
                 issues.Add(new OpenApiDiagnosticIssue
                 {
                     Severity = DiagnosticSeverity.Warning,
@@ -777,8 +756,6 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
                     ComponentType = "schema"
                 });
             }
-
-            // Check for boolean enums
             if (schema.Enum.All(e => e is bool))
             {
                 issues.Add(new OpenApiDiagnosticIssue
@@ -792,8 +769,6 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
                     ComponentType = "schema"
                 });
             }
-
-            // Check for nested arrays in enums
             if (schema.Enum.Any(e => e is IList<object>))
             {
                 issues.Add(new OpenApiDiagnosticIssue
@@ -807,9 +782,7 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
                     ComponentType = "schema"
                 });
             }
-
-            // Check for mixed types in enums
-            var types = schema.Enum.Select(e => e?.GetType().Name ?? "null").Distinct().ToList();
+            List<string> types = schema.Enum.Select(e => e?.GetType().Name ?? "null").Distinct().ToList();
             if (types.Count > 1)
             {
                 issues.Add(new OpenApiDiagnosticIssue
@@ -824,23 +797,17 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
                 });
             }
         }
-
-        // Recursively check properties
         if (schema.Properties != null)
         {
-            foreach (var property in schema.Properties)
+            foreach (KeyValuePair<string, IOpenApiSchema> property in schema.Properties)
             {
                 await AnalyzeSchemaEnums(property.Key, property.Value, issues, currentPath);
             }
         }
-
-        // Check items for array types
         if (schema.Items != null)
         {
             await AnalyzeSchemaEnums("items", schema.Items, issues, currentPath);
         }
-
-        // Check allOf
         if (schema.AllOf != null)
         {
             for (int i = 0; i < schema.AllOf.Count; i++)
@@ -848,8 +815,6 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
                 await AnalyzeSchemaEnums($"allOf[{i}]", schema.AllOf[i], issues, currentPath);
             }
         }
-
-        // Check oneOf
         if (schema.OneOf != null)
         {
             for (int i = 0; i < schema.OneOf.Count; i++)
@@ -857,8 +822,6 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
                 await AnalyzeSchemaEnums($"oneOf[{i}]", schema.OneOf[i], issues, currentPath);
             }
         }
-
-        // Check anyOf
         if (schema.AnyOf != null)
         {
             for (int i = 0; i < schema.AnyOf.Count; i++)

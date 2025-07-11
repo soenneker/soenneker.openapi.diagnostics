@@ -1,4 +1,5 @@
-﻿using Soenneker.Facts.Local;
+﻿using System.Collections.Generic;
+using Soenneker.Facts.Local;
 using Soenneker.Tests.FixturedUnit;
 using System.Threading.Tasks;
 using Soenneker.Utils.Json;
@@ -29,12 +30,11 @@ public sealed class OpenApiDiagnosticsTests : FixturedUnitTest
     [LocalFact]
     public async ValueTask AnalyzeFile()
     {
+        List<OpenApiDiagnosticIssue> issues = await _util.AnalyzeFile(@"c:\cloudflare\fixed.json");
 
-        var issues = await _util.AnalyzeFile(@"c:\cloudflare\fixed.json");
+        List<OpenApiDiagnosticIssue> errors = issues.Where(x => x.Severity == DiagnosticSeverity.Error && x.Category != DiagnosticCategory.Naming).ToList();
 
-        var errors = issues.Where(x => x.Severity == DiagnosticSeverity.Error && x.Category != DiagnosticCategory.Naming).ToList();
-
-        var output = JsonUtil.Serialize(errors, Enums.JsonOptions.JsonOptionType.Pretty, Enums.JsonLibrary.JsonLibraryType.SystemTextJson);
+        string? output = JsonUtil.Serialize(errors, Enums.JsonOptions.JsonOptionType.Pretty, Enums.JsonLibrary.JsonLibraryType.SystemTextJson);
 
         File.Delete("c:\\cloudflare\\problems.txt");
 

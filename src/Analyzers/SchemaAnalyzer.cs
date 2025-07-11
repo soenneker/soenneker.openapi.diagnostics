@@ -1,9 +1,10 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 using Soenneker.OpenApi.Diagnostics.Analyzers.Abstract;
 using Soenneker.OpenApi.Diagnostics.Models;
+using System;
 
 namespace Soenneker.OpenApi.Diagnostics.Analyzers;
 
@@ -29,7 +30,7 @@ public class SchemaAnalyzer : ISchemaAnalyzer
 
         var visited = new HashSet<string>();
         // Then analyze other schema aspects
-        foreach (var schema in document.Components.Schemas)
+        foreach (KeyValuePair<string, IOpenApiSchema> schema in document.Components.Schemas)
         {
             await AnalyzeSchema(schema.Key, schema.Value, issues, visited);
         }
@@ -38,16 +39,16 @@ public class SchemaAnalyzer : ISchemaAnalyzer
     /// <summary>
     /// Analyzes a specific schema and its nested schemas
     /// </summary>
-    private async Task AnalyzeSchema(string schemaName, OpenApiSchema schema, List<OpenApiDiagnosticIssue> issues, HashSet<string> visited, string path = "")
+    private async Task AnalyzeSchema(string schemaName, IOpenApiSchema schema, List<OpenApiDiagnosticIssue> issues, HashSet<string> visited, string path = "")
     {
         if (schema == null) return;
 
-        var currentPath = string.IsNullOrEmpty(path) ? schemaName : $"{path}.{schemaName}";
+        string currentPath = string.IsNullOrEmpty(path) ? schemaName : $"{path}.{schemaName}";
 
         // Prevent infinite recursion by tracking visited schemas
-        if (schema.Reference != null)
+        if (schema is OpenApiSchemaReference refSchema)
         {
-            var refPath = schema.Reference.Id;
+            var refPath = refSchema.Id;
             if (!visited.Add(refPath))
             {
                 return; // Skip if we've already visited this schema
@@ -57,7 +58,7 @@ public class SchemaAnalyzer : ISchemaAnalyzer
         // Check for empty inline schemas
         if (schema.Properties != null)
         {
-            foreach (var property in schema.Properties)
+            foreach (KeyValuePair<string, IOpenApiSchema> property in schema.Properties)
             {
                 if (property.Value == null || (property.Value.Properties == null && property.Value.Type == null))
                 {
@@ -76,7 +77,7 @@ public class SchemaAnalyzer : ISchemaAnalyzer
         }
 
         // Check for empty array items
-        if (schema.Type == "array" && (schema.Items == null || (schema.Items.Properties == null && schema.Items.Type == null)))
+        if (schema.Type == JsonSchemaType.Array && (schema.Items == null || (schema.Items.Properties == null && schema.Items.Type == null)))
         {
             issues.Add(new OpenApiDiagnosticIssue
             {
@@ -109,9 +110,9 @@ public class SchemaAnalyzer : ISchemaAnalyzer
             else
             {
                 // Check if all mapped schemas exist
-                foreach (var mapping in schema.Discriminator.Mapping)
+                foreach (KeyValuePair<string, OpenApiSchemaReference> mapping in schema.Discriminator.Mapping)
                 {
-                    var refPath = mapping.Value;
+                    var refPath = mapping.Value.Id;
                     if (!refPath.StartsWith("#/components/schemas/"))
                     {
                         issues.Add(new OpenApiDiagnosticIssue
@@ -134,7 +135,7 @@ public class SchemaAnalyzer : ISchemaAnalyzer
         {
             for (int i = 0; i < schema.AllOf.Count; i++)
             {
-                var fragment = schema.AllOf[i];
+                IOpenApiSchema fragment = schema.AllOf[i];
                 if (fragment.Type == null)
                 {
                     issues.Add(new OpenApiDiagnosticIssue
@@ -148,7 +149,7 @@ public class SchemaAnalyzer : ISchemaAnalyzer
                         ComponentType = "schema"
                     });
                 }
-                else if (fragment.Type != "object")
+                else if (fragment.Type != JsonSchemaType.Object)
                 {
                     issues.Add(new OpenApiDiagnosticIssue
                     {
@@ -165,9 +166,9 @@ public class SchemaAnalyzer : ISchemaAnalyzer
         }
 
         // Check for circular references
-        if (schema.Reference != null)
+        if (schema is OpenApiSchemaReference refSchema2)
         {
-            var refPath = schema.Reference.Id;
+            var refPath = refSchema2.Id;
             if (refPath == currentPath)
             {
                 issues.Add(new OpenApiDiagnosticIssue
@@ -187,7 +188,7 @@ public class SchemaAnalyzer : ISchemaAnalyzer
         if (schema.Type != null)
         {
             // Check for invalid type and format combinations
-            if (schema.Type == "string" && schema.Format == "date-time" && !IsValidDateTimeFormat(schema))
+            if (schema.Type == JsonSchemaType.String && schema.Format == "date-time" && !IsValidDateTimeFormat(schema))
             {
                 issues.Add(new OpenApiDiagnosticIssue
                 {
@@ -202,7 +203,7 @@ public class SchemaAnalyzer : ISchemaAnalyzer
             }
 
             // Check for invalid number formats
-            if (schema.Type == "number" && schema.Format != null && !IsValidNumberFormat(schema.Format))
+            if (schema.Type == JsonSchemaType.Number && schema.Format != null && !IsValidNumberFormat(schema.Format))
             {
                 issues.Add(new OpenApiDiagnosticIssue
                 {
@@ -218,46 +219,80 @@ public class SchemaAnalyzer : ISchemaAnalyzer
         }
 
         // Check for invalid constraints
-        if (schema.Minimum.HasValue && schema.Maximum.HasValue && schema.Minimum.Value > schema.Maximum.Value)
+        if (schema.Minimum != null && schema.Maximum != null)
         {
-            issues.Add(new OpenApiDiagnosticIssue
+            int? minInt = null, maxInt = null;
+            decimal? minDec = null, maxDec = null;
+            try { minInt = Convert.ToInt32(schema.Minimum); } catch { }
+            try { maxInt = Convert.ToInt32(schema.Maximum); } catch { }
+            try { minDec = Convert.ToDecimal(schema.Minimum); } catch { }
+            try { maxDec = Convert.ToDecimal(schema.Maximum); } catch { }
+            if (minInt.HasValue && maxInt.HasValue && minInt > maxInt)
             {
-                Severity = DiagnosticSeverity.Error,
-                Category = DiagnosticCategory.Schema,
-                Code = "INVALID_RANGE",
-                Message = $"Schema '{currentPath}' has minimum ({schema.Minimum}) greater than maximum ({schema.Maximum})",
-                Location = $"components.schemas.{currentPath}",
-                ComponentName = schemaName,
-                ComponentType = "schema"
-            });
+                issues.Add(new OpenApiDiagnosticIssue
+                {
+                    Severity = DiagnosticSeverity.Error,
+                    Category = DiagnosticCategory.Schema,
+                    Code = "INVALID_RANGE",
+                    Message = $"Schema '{currentPath}' has minimum ({schema.Minimum}) greater than maximum ({schema.Maximum})",
+                    Location = $"components.schemas.{currentPath}",
+                    ComponentName = schemaName,
+                    ComponentType = "schema"
+                });
+            }
+            if (minDec.HasValue && maxDec.HasValue && minDec > maxDec)
+            {
+                issues.Add(new OpenApiDiagnosticIssue
+                {
+                    Severity = DiagnosticSeverity.Error,
+                    Category = DiagnosticCategory.Schema,
+                    Code = "INVALID_RANGE",
+                    Message = $"Schema '{currentPath}' has minimum ({schema.Minimum}) greater than maximum ({schema.Maximum})",
+                    Location = $"components.schemas.{currentPath}",
+                    ComponentName = schemaName,
+                    ComponentType = "schema"
+                });
+            }
         }
 
-        if (schema.MinLength.HasValue && schema.MaxLength.HasValue && schema.MinLength.Value > schema.MaxLength.Value)
+        if (schema.MinLength != null && schema.MaxLength != null)
         {
-            issues.Add(new OpenApiDiagnosticIssue
+            int? minLenInt = null, maxLenInt = null;
+            try { minLenInt = Convert.ToInt32(schema.MinLength); } catch { }
+            try { maxLenInt = Convert.ToInt32(schema.MaxLength); } catch { }
+            if (minLenInt.HasValue && maxLenInt.HasValue && minLenInt > maxLenInt)
             {
-                Severity = DiagnosticSeverity.Error,
-                Category = DiagnosticCategory.Schema,
-                Code = "INVALID_LENGTH_RANGE",
-                Message = $"Schema '{currentPath}' has minLength ({schema.MinLength}) greater than maxLength ({schema.MaxLength})",
-                Location = $"components.schemas.{currentPath}",
-                ComponentName = schemaName,
-                ComponentType = "schema"
-            });
+                issues.Add(new OpenApiDiagnosticIssue
+                {
+                    Severity = DiagnosticSeverity.Error,
+                    Category = DiagnosticCategory.Schema,
+                    Code = "INVALID_LENGTH_RANGE",
+                    Message = $"Schema '{currentPath}' has minLength ({schema.MinLength}) greater than maxLength ({schema.MaxLength})",
+                    Location = $"components.schemas.{currentPath}",
+                    ComponentName = schemaName,
+                    ComponentType = "schema"
+                });
+            }
         }
 
-        if (schema.MinItems.HasValue && schema.MaxItems.HasValue && schema.MinItems.Value > schema.MaxItems.Value)
+        if (schema.MinItems != null && schema.MaxItems != null)
         {
-            issues.Add(new OpenApiDiagnosticIssue
+            int? minItemsInt = null, maxItemsInt = null;
+            try { minItemsInt = Convert.ToInt32(schema.MinItems); } catch { }
+            try { maxItemsInt = Convert.ToInt32(schema.MaxItems); } catch { }
+            if (minItemsInt.HasValue && maxItemsInt.HasValue && minItemsInt > maxItemsInt)
             {
-                Severity = DiagnosticSeverity.Error,
-                Category = DiagnosticCategory.Schema,
-                Code = "INVALID_ITEMS_RANGE",
-                Message = $"Schema '{currentPath}' has minItems ({schema.MinItems}) greater than maxItems ({schema.MaxItems})",
-                Location = $"components.schemas.{currentPath}",
-                ComponentName = schemaName,
-                ComponentType = "schema"
-            });
+                issues.Add(new OpenApiDiagnosticIssue
+                {
+                    Severity = DiagnosticSeverity.Error,
+                    Category = DiagnosticCategory.Schema,
+                    Code = "INVALID_ITEMS_RANGE",
+                    Message = $"Schema '{currentPath}' has minItems ({schema.MinItems}) greater than maxItems ({schema.MaxItems})",
+                    Location = $"components.schemas.{currentPath}",
+                    ComponentName = schemaName,
+                    ComponentType = "schema"
+                });
+            }
         }
 
         // Check for invalid pattern
@@ -278,7 +313,7 @@ public class SchemaAnalyzer : ISchemaAnalyzer
         // Recursively analyze properties
         if (schema.Properties != null)
         {
-            foreach (var property in schema.Properties)
+            foreach (KeyValuePair<string, IOpenApiSchema> property in schema.Properties)
             {
                 await AnalyzeSchema(property.Key, property.Value, issues, visited, currentPath);
             }
@@ -318,7 +353,7 @@ public class SchemaAnalyzer : ISchemaAnalyzer
         }
     }
 
-    private bool IsValidDateTimeFormat(OpenApiSchema schema)
+    private bool IsValidDateTimeFormat(IOpenApiSchema schema)
     {
         return schema.Format == "date-time" || schema.Format == "date";
     }
