@@ -94,6 +94,34 @@ public class SchemaAnalyzer : ISchemaAnalyzer
         // Check for missing discriminator mappings
         if (schema.Discriminator != null)
         {
+            // Check if discriminator property is in required list
+            if (string.IsNullOrWhiteSpace(schema.Discriminator.PropertyName))
+            {
+                issues.Add(new OpenApiDiagnosticIssue
+                {
+                    Severity = DiagnosticSeverity.Error,
+                    Category = DiagnosticCategory.Schema,
+                    Code = "DISCRIMINATOR_MISSING_PROPERTY_NAME",
+                    Message = $"Schema '{currentPath}' has a discriminator but it's missing a 'propertyName'",
+                    Location = $"components.schemas.{currentPath}.discriminator",
+                    ComponentName = schemaName,
+                    ComponentType = "schema"
+                });
+            }
+            else if (schema.Required == null || !schema.Required.Contains(schema.Discriminator.PropertyName))
+            {
+                issues.Add(new OpenApiDiagnosticIssue
+                {
+                    Severity = DiagnosticSeverity.Error,
+                    Category = DiagnosticCategory.Kiota,
+                    Code = "DISCRIMINATOR_PROPERTY_NOT_REQUIRED",
+                    Message = $"The discriminator property '{schema.Discriminator.PropertyName}' must be in the 'required' list for the schema '{currentPath}'. Code generators like Kiota will fail without this.",
+                    Location = $"components.schemas.{currentPath}",
+                    ComponentName = schemaName,
+                    ComponentType = "schema"
+                });
+            }
+
             if (schema.Discriminator.Mapping == null || !schema.Discriminator.Mapping.Any())
             {
                 issues.Add(new OpenApiDiagnosticIssue
@@ -128,6 +156,19 @@ public class SchemaAnalyzer : ISchemaAnalyzer
                     }
                 }
             }
+        }
+        else if (schema.OneOf != null && schema.OneOf.Any())
+        {
+            issues.Add(new OpenApiDiagnosticIssue
+            {
+                Severity = DiagnosticSeverity.Error,
+                Category = DiagnosticCategory.Kiota,
+                Code = "MISSING_DISCRIMINATOR",
+                Message = $"Schema '{currentPath}' uses 'oneOf' for polymorphism but is missing a 'discriminator' object, which is required by Kiota for code generation.",
+                Location = $"components.schemas.{currentPath}",
+                ComponentName = schemaName,
+                ComponentType = "schema"
+            });
         }
 
         // Check allOf fragments for missing type

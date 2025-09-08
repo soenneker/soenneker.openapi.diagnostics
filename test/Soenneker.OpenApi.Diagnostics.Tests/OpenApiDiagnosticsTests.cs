@@ -30,7 +30,7 @@ public sealed class OpenApiDiagnosticsTests : FixturedUnitTest
     [LocalFact]
     public async ValueTask AnalyzeFile()
     {
-        List<OpenApiDiagnosticIssue> issues = await _util.AnalyzeFile(@"c:\cloudflare\fixed.json");
+        List<OpenApiDiagnosticIssue> issues = await _util.AnalyzeFile(@"c:\cloudflare\spec3fixed.json");
 
         List<OpenApiDiagnosticIssue> errors = issues.Where(x => x.Severity == DiagnosticSeverity.Error && x.Category != DiagnosticCategory.Naming).ToList();
 
