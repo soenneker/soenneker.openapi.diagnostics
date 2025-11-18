@@ -438,7 +438,7 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
         }
     }
 
-    private void AnalyzeContent(AnalysisContext context, IDictionary<string, OpenApiMediaType> content, string location, string operationId, bool isRequest)
+    private void AnalyzeContent(AnalysisContext context, IDictionary<string, IOpenApiMediaType> content, string location, string operationId, bool isRequest)
     {
         if (content == null || !content.Any())
         {
@@ -448,7 +448,7 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
             return;
         }
 
-        foreach (KeyValuePair<string, OpenApiMediaType> mediaType in content)
+        foreach (KeyValuePair<string, IOpenApiMediaType> mediaType in content)
         {
             var mediaTypeLocation = $"{location}.{mediaType.Key}";
             IOpenApiSchema? schema = mediaType.Value.Schema;
