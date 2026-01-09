@@ -11,6 +11,7 @@ using Microsoft.OpenApi;
 using Soenneker.OpenApi.Diagnostics.Abstract;
 using Soenneker.OpenApi.Diagnostics.Analyzers.Abstract;
 using Soenneker.OpenApi.Diagnostics.Models;
+using Soenneker.Utils.PooledStringBuilders;
 
 namespace Soenneker.OpenApi.Diagnostics;
 
@@ -701,7 +702,7 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
 
         if (!parts.Any()) return string.Empty;
 
-        var pascalCaseBuilder = new StringBuilder();
+        using var pascalCaseBuilder = new PooledStringBuilder();
         foreach (string part in parts)
         {
             pascalCaseBuilder.Append(char.ToUpperInvariant(part[0]));
