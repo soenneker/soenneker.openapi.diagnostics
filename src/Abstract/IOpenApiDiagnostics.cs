@@ -12,10 +12,10 @@ public interface IOpenApiDiagnostics
     /// <summary>
     /// Analyzes an OpenAPI document from a JSON string
     /// </summary>
-    Task<List<OpenApiDiagnosticIssue>> Analyze(string openApiJson);
+    ValueTask<List<OpenApiDiagnosticIssue>> Analyze(string openApiJson);
 
     /// <summary>
     /// Analyzes an OpenAPI document from a file
     /// </summary>
-    Task<List<OpenApiDiagnosticIssue>> AnalyzeFile(string file);
+    ValueTask<List<OpenApiDiagnosticIssue>> AnalyzeFile(string file);
 } 

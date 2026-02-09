@@ -1,16 +1,18 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
-using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.OpenApi;
+using Soenneker.Extensions.Task;
+using Soenneker.Extensions.ValueTask;
 using Soenneker.OpenApi.Diagnostics.Abstract;
 using Soenneker.OpenApi.Diagnostics.Analyzers.Abstract;
 using Soenneker.OpenApi.Diagnostics.Models;
+using Soenneker.Utils.File.Abstract;
 using Soenneker.Utils.PooledStringBuilders;
 
 namespace Soenneker.OpenApi.Diagnostics;
@@ -26,6 +28,7 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
 {
     private readonly ISchemaAnalyzer _schemaAnalyzer;
     private readonly IPathAnalyzer _pathAnalyzer;
+    private readonly IFileUtil _fileUtil;
 
     private static readonly Regex PathParameterRegex = new(@"\{([^}]+)\}", RegexOptions.Compiled);
     private static readonly Regex ValidIdentifierRegex = new(@"^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.Compiled);
@@ -41,16 +44,17 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
         "uint", "ulong", "unchecked", "unsafe", "ushort", "using", "virtual", "void", "volatile", "while"
     };
 
-    public OpenApiDiagnostics(ISchemaAnalyzer schemaAnalyzer, IPathAnalyzer pathAnalyzer)
+    public OpenApiDiagnostics(ISchemaAnalyzer schemaAnalyzer, IPathAnalyzer pathAnalyzer, IFileUtil fileUtil)
     {
         _schemaAnalyzer = schemaAnalyzer;
         _pathAnalyzer = pathAnalyzer;
+        _fileUtil = fileUtil;
     }
 
     /// <summary>
     /// Analyzes an OpenAPI document from a JSON string
     /// </summary>
-    public async Task<List<OpenApiDiagnosticIssue>> Analyze(string openApiJson)
+    public async ValueTask<List<OpenApiDiagnosticIssue>> Analyze(string openApiJson)
     {
         var issues = new List<OpenApiDiagnosticIssue>();
         try
@@ -91,16 +95,16 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
     /// <summary>
     /// Analyzes an OpenAPI document from a file
     /// </summary>
-    public async Task<List<OpenApiDiagnosticIssue>> AnalyzeFile(string file)
+    public async ValueTask<List<OpenApiDiagnosticIssue>> AnalyzeFile(string file)
     {
-        string json = await File.ReadAllTextAsync(file);
-        return await Analyze(json);
+        string json = await _fileUtil.Read(file).NoSync();
+        return await Analyze(json).NoSync();
     }
 
     /// <summary>
     /// Analyzes an OpenAPI document
     /// </summary>
-    private async Task<List<OpenApiDiagnosticIssue>> AnalyzeDocument(OpenApiDocument document)
+    private async ValueTask<List<OpenApiDiagnosticIssue>> AnalyzeDocument(OpenApiDocument document)
     {
         var issues = new List<OpenApiDiagnosticIssue>();
         try
@@ -829,39 +833,6 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
             {
                 await AnalyzeSchemaEnums($"anyOf[{i}]", schema.AnyOf[i], issues, currentPath);
             }
-        }
-    }
-
-    /// <summary>
-    /// Holds the state for a single analysis run to ensure the main class is stateless.
-    /// </summary>
-    private class AnalysisContext
-    {
-        public OpenApiDocument Document { get; }
-        public List<OpenApiDiagnosticIssue> Issues { get; } = new();
-        public HashSet<string> OperationIds { get; } = new(StringComparer.OrdinalIgnoreCase);
-        public Dictionary<string, HashSet<string>> SchemaDependencies { get; } = new();
-        public HashSet<string> ReportedCycles { get; } = new();
-
-        public AnalysisContext(OpenApiDocument document)
-        {
-            Document = document;
-        }
-
-        public void AddIssue(DiagnosticSeverity severity, DiagnosticCategory category, string code, string message, string location,
-            string componentName = null, string componentPath = null, string componentType = null)
-        {
-            Issues.Add(new OpenApiDiagnosticIssue
-            {
-                Severity = severity,
-                Category = category,
-                Code = code,
-                Message = message,
-                Location = location,
-                ComponentName = componentName,
-                ComponentPath = componentPath,
-                ComponentType = componentType
-            });
         }
     }
 }
