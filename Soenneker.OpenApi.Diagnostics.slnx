@@ -4,10 +4,11 @@
   </Folder>
   <Folder Name="/.github/workflows/">
     <File Path=".github/workflows/build-and-test.yml" />
+    <File Path=".github/workflows/codeql.yml" />
     <File Path=".github/workflows/publish-package.yml" />
   </Folder>
   <Folder Name="/src/">
-    <Project Path="src/Soenneker.OpenApi.Diagnostics.csproj" />
+    <Project Path="src/Soenneker.OpenApi.Diagnostics/Soenneker.OpenApi.Diagnostics.csproj" />
   </Folder>
   <Folder Name="/test/">
     <Project Path="test/Soenneker.OpenApi.Diagnostics.Tests/Soenneker.OpenApi.Diagnostics.Tests.csproj" />
