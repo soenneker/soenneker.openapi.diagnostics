@@ -1,9 +1,8 @@
-﻿using System.Collections.Generic;
-using Soenneker.Facts.Local;
-using Soenneker.Tests.FixturedUnit;
+using System.Collections.Generic;
+using Soenneker.Tests.Attributes.Local;
+using Soenneker.Tests.HostedUnit;
 using System.Threading.Tasks;
 using Soenneker.Utils.Json;
-using Xunit;
 using System.IO;
 using System.Linq;
 using Soenneker.OpenApi.Diagnostics.Abstract;
@@ -11,23 +10,23 @@ using Soenneker.OpenApi.Diagnostics.Models;
 
 namespace Soenneker.OpenApi.Diagnostics.Tests;
 
-[Collection("Collection")]
-public sealed class OpenApiDiagnosticsTests : FixturedUnitTest
+[ClassDataSource<Host>(Shared = SharedType.PerTestSession)]
+public sealed class OpenApiDiagnosticsTests : HostedUnitTest
 {
     private readonly IOpenApiDiagnostics _util;
 
-    public OpenApiDiagnosticsTests(Fixture fixture, ITestOutputHelper output) : base(fixture, output)
+    public OpenApiDiagnosticsTests(Host host) : base(host)
     {
         _util = Resolve<IOpenApiDiagnostics>(true);
     }
 
-    [Fact]
+    [Test]
     public void Default()
     {
 
     }
 
-    [LocalFact]
+    [LocalOnly]
     public async ValueTask AnalyzeFile()
     {
         List<OpenApiDiagnosticIssue> issues = await _util.AnalyzeFile(@"c:\cloudflare\spec3fixed.json");
