@@ -38,7 +38,7 @@ jobs:
         run: dotnet build test/Soenneker.OpenApi.Diagnostics.Tests/Soenneker.OpenApi.Diagnostics.Tests.csproj --configuration Release --no-restore --verbosity minimal
 
       - name: Test
-        run: dotnet test test/Soenneker.OpenApi.Diagnostics.Tests/Soenneker.OpenApi.Diagnostics.Tests.csproj --configuration Release --no-build --no-restore --verbosity minimal
+        run: dotnet test --project test/Soenneker.OpenApi.Diagnostics.Tests/Soenneker.OpenApi.Diagnostics.Tests.csproj --configuration Release --no-build --no-restore --verbosity minimal
 
       - name: Pack
         run: dotnet pack src/Soenneker.OpenApi.Diagnostics/Soenneker.OpenApi.Diagnostics.csproj --configuration Release --no-build --no-restore --output . --verbosity minimal
