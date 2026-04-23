@@ -37,8 +37,9 @@ public sealed class OpenApiDiagnosticsTests : HostedUnitTest
 
         File.Delete("c:\\cloudflare\\problems.txt");
 
-        await File.WriteAllTextAsync(@"c:\cloudflare\problems.txt", output, CancellationToken);
+        await File.WriteAllTextAsync(@"c:\cloudflare\problems.txt", output, System.Threading.CancellationToken.None);
 
        // Logger.LogInformation(output);
     }
 }
+
