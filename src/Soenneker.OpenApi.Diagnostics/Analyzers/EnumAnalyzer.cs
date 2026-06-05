@@ -12,9 +12,6 @@ namespace Soenneker.OpenApi.Diagnostics.Analyzers;
 /// </summary>
 public class EnumAnalyzer : IEnumAnalyzer
 {
-    /// <summary>
-    /// Analyzes all enums in the document
-    /// </summary>
     public async Task AnalyzeEnums(OpenApiDocument document, List<OpenApiDiagnosticIssue> issues)
     {
         var visited = new HashSet<string>();

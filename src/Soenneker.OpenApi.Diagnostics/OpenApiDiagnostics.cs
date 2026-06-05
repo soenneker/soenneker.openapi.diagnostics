@@ -51,9 +51,6 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
         _fileUtil = fileUtil;
     }
 
-    /// <summary>
-    /// Analyzes an OpenAPI document from a JSON string
-    /// </summary>
     public async ValueTask<List<OpenApiDiagnosticIssue>> Analyze(string openApiJson)
     {
         var issues = new List<OpenApiDiagnosticIssue>();
@@ -92,9 +89,6 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
         }
     }
 
-    /// <summary>
-    /// Analyzes an OpenAPI document from a file
-    /// </summary>
     public async ValueTask<List<OpenApiDiagnosticIssue>> AnalyzeFile(string file)
     {
         string json = await _fileUtil.Read(file).NoSync();
@@ -182,7 +176,6 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
         }
     }
 
-    /// <inheritdoc />
     public async Task<List<OpenApiDiagnosticIssue>> Analyze(Stream openApiStream)
     {
         var (document, diagnostic) = await OpenApiDocument.LoadAsync(openApiStream);
@@ -203,7 +196,6 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
         return await AnalyzeDocument(document);
     }
 
-    /// <inheritdoc />
     public async Task<List<OpenApiDiagnosticIssue>> Analyze(FileInfo fileInfo)
     {
         if (!fileInfo.Exists)
@@ -224,7 +216,6 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
         return await Analyze(stream);
     }
 
-    /// <inheritdoc />
     public List<OpenApiDiagnosticIssue> Analyze(OpenApiDocument document)
     {
         try

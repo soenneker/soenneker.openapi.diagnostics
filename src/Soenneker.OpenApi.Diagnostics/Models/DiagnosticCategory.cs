@@ -5,8 +5,14 @@ namespace Soenneker.OpenApi.Diagnostics.Models;
 /// </summary>
 public enum DiagnosticCategory
 {
+    /// <summary>
+    /// Represents the naming value.
+    /// </summary>
     Naming,
 
+    /// <summary>
+    /// Represents the kiota value.
+    /// </summary>
     Kiota,
 
     /// <summary>
@@ -29,6 +35,9 @@ public enum DiagnosticCategory
     /// </summary>
     Security,
 
+    /// <summary>
+    /// Represents the structure value.
+    /// </summary>
     Structure,
 
     /// <summary>
@@ -40,7 +49,13 @@ public enum DiagnosticCategory
     /// Issues related to enums
     /// </summary>
     Enum,
+    /// <summary>
+    /// Represents the schema value.
+    /// </summary>
     Schema,
+    /// <summary>
+    /// Represents the response value.
+    /// </summary>
     Response,
 
     /// <summary>

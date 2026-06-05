@@ -20,9 +20,6 @@ public class SchemaAnalyzer : ISchemaAnalyzer
         _enumAnalyzer = enumAnalyzer;
     }
 
-    /// <summary>
-    /// Analyzes all schemas in the document
-    /// </summary>
     public async Task AnalyzeSchemas(OpenApiDocument document, List<OpenApiDiagnosticIssue> issues)
     {
         // First analyze enums

@@ -13,9 +13,6 @@ namespace Soenneker.OpenApi.Diagnostics.Analyzers;
 /// </summary>
 public class PathAnalyzer : IPathAnalyzer
 {
-    /// <summary>
-    /// Analyzes all paths in the document
-    /// </summary>
     public async Task AnalyzePaths(OpenApiDocument document, List<OpenApiDiagnosticIssue> issues)
     {
         if (document.Paths == null || !document.Paths.Any())
