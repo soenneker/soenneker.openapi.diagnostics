@@ -8,9 +8,7 @@ using Soenneker.OpenApi.Diagnostics.Models;
 
 namespace Soenneker.OpenApi.Diagnostics.Analyzers;
 
-/// <summary>
-/// Analyzes path definitions in OpenAPI documents
-/// </summary>
+/// <inheritdoc cref="IPathAnalyzer"/>
 public class PathAnalyzer : IPathAnalyzer
 {
     public async Task AnalyzePaths(OpenApiDocument document, List<OpenApiDiagnosticIssue> issues)

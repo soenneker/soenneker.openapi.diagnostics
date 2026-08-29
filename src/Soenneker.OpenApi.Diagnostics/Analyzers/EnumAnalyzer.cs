@@ -7,9 +7,7 @@ using Soenneker.OpenApi.Diagnostics.Models;
 
 namespace Soenneker.OpenApi.Diagnostics.Analyzers;
 
-/// <summary>
-/// Analyzes enum definitions in OpenAPI documents
-/// </summary>
+/// <inheritdoc cref="IEnumAnalyzer"/>
 public class EnumAnalyzer : IEnumAnalyzer
 {
     public async Task AnalyzeEnums(OpenApiDocument document, List<OpenApiDiagnosticIssue> issues)

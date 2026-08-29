@@ -8,9 +8,7 @@ using System;
 
 namespace Soenneker.OpenApi.Diagnostics.Analyzers;
 
-/// <summary>
-/// Analyzes schema definitions in OpenAPI documents
-/// </summary>
+/// <inheritdoc cref="ISchemaAnalyzer"/>
 public class SchemaAnalyzer : ISchemaAnalyzer
 {
     private readonly IEnumAnalyzer _enumAnalyzer;

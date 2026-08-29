@@ -17,13 +17,7 @@ using Soenneker.Utils.PooledStringBuilders;
 
 namespace Soenneker.OpenApi.Diagnostics;
 
-/// <summary>
-/// A highly comprehensive OpenAPI diagnostic tool, with a focus on detecting issues
-/// that can cause problems for code generators like Kiota.
-/// </summary>
-/// <summary>
-/// Service for analyzing OpenAPI documents and identifying potential issues
-/// </summary>
+/// <inheritdoc cref="IOpenApiDiagnostics"/>
 public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
 {
     private readonly ISchemaAnalyzer _schemaAnalyzer;
