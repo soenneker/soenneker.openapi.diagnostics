@@ -176,6 +176,11 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
         }
     }
 
+    /// <summary>
+    /// Analyzes openAPI Diagnostics.
+    /// </summary>
+    /// <param name="openApiStream">Open API Stream for the analyze operation.</param>
+    /// <returns>A task whose result is the collection returned by analyze.</returns>
     public async Task<List<OpenApiDiagnosticIssue>> Analyze(Stream openApiStream)
     {
         var (document, diagnostic) = await OpenApiDocument.LoadAsync(openApiStream);
@@ -196,6 +201,11 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
         return await AnalyzeDocument(document);
     }
 
+    /// <summary>
+    /// Analyzes openAPI Diagnostics.
+    /// </summary>
+    /// <param name="fileInfo">File Info for the analyze operation.</param>
+    /// <returns>A task whose result is the collection returned by analyze.</returns>
     public async Task<List<OpenApiDiagnosticIssue>> Analyze(FileInfo fileInfo)
     {
         if (!fileInfo.Exists)
@@ -216,6 +226,11 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
         return await Analyze(stream);
     }
 
+    /// <summary>
+    /// Analyzes openAPI Diagnostics.
+    /// </summary>
+    /// <param name="document">Document to read, persist, or update.</param>
+    /// <returns>The collection produced by analyze.</returns>
     public List<OpenApiDiagnosticIssue> Analyze(OpenApiDocument document)
     {
         try

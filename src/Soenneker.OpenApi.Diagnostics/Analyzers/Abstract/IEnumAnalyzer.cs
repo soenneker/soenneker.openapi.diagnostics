@@ -13,5 +13,8 @@ public interface IEnumAnalyzer
     /// <summary>
     /// Analyzes all enums in the document
     /// </summary>
+    /// <param name="document">Document to read, persist, or update.</param>
+    /// <param name="issues">issues to process.</param>
+    /// <returns>A task that completes when the analyze enums operation is complete.</returns>
     Task AnalyzeEnums(OpenApiDocument document, List<OpenApiDiagnosticIssue> issues);
-} 
+}

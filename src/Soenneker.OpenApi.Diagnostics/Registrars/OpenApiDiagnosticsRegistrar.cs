@@ -31,6 +31,8 @@ public static class OpenApiDiagnosticsRegistrar
     /// <summary>
     /// Adds <see cref="IOpenApiDiagnostics"/> as a scoped service. <para/>
     /// </summary>
+    /// <param name="services">Service collection that receives the registration.</param>
+    /// <returns>The same service collection, so additional registrations can be chained.</returns>
     public static IServiceCollection AddOpenApiDiagnosticsAsScoped(this IServiceCollection services)
     {
         services.AddFileUtilAsScoped();
