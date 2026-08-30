@@ -417,4 +417,4 @@ public class SchemaAnalyzer : ISchemaAnalyzer
             return false;
         }
     }
-} 
+}

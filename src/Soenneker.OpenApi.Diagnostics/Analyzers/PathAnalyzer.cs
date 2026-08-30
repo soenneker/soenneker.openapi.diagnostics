@@ -214,4 +214,4 @@ public class PathAnalyzer : IPathAnalyzer
         if (string.IsNullOrEmpty(operationId)) return false;
         return System.Text.RegularExpressions.Regex.IsMatch(operationId, "^[a-zA-Z][a-zA-Z0-9_]*$");
     }
-} 
+}
