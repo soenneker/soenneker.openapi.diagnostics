@@ -23,6 +23,9 @@ public class SchemaAnalyzer : ISchemaAnalyzer
         // First analyze enums
         await _enumAnalyzer.AnalyzeEnums(document, issues);
 
+        if (document.Components?.Schemas == null)
+            return;
+
         var visited = new HashSet<string>();
         // Then analyze other schema aspects
         foreach (KeyValuePair<string, IOpenApiSchema> schema in document.Components.Schemas)
@@ -43,7 +46,10 @@ public class SchemaAnalyzer : ISchemaAnalyzer
         // Prevent infinite recursion by tracking visited schemas
         if (schema is OpenApiSchemaReference refSchema)
         {
-            var refPath = refSchema.Id;
+            string? refPath = refSchema.Id;
+            if (refPath == null)
+                return;
+
             if (!visited.Add(refPath))
             {
                 return; // Skip if we've already visited this schema
@@ -135,8 +141,8 @@ public class SchemaAnalyzer : ISchemaAnalyzer
                 // Check if all mapped schemas exist
                 foreach (KeyValuePair<string, OpenApiSchemaReference> mapping in schema.Discriminator.Mapping)
                 {
-                    var refPath = mapping.Value.Id;
-                    if (!refPath.StartsWith("#/components/schemas/"))
+                    string? refPath = mapping.Value.Id;
+                    if (refPath == null || !refPath.StartsWith("#/components/schemas/", StringComparison.Ordinal))
                     {
                         issues.Add(new OpenApiDiagnosticIssue
                         {
@@ -204,7 +210,7 @@ public class SchemaAnalyzer : ISchemaAnalyzer
         // Check for circular references
         if (schema is OpenApiSchemaReference refSchema2)
         {
-            var refPath = refSchema2.Id;
+            string? refPath = refSchema2.Id;
             if (refPath == currentPath)
             {
                 issues.Add(new OpenApiDiagnosticIssue

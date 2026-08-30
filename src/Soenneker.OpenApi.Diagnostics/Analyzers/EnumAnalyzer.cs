@@ -12,6 +12,9 @@ public class EnumAnalyzer : IEnumAnalyzer
 {
     public async Task AnalyzeEnums(OpenApiDocument document, List<OpenApiDiagnosticIssue> issues)
     {
+        if (document.Components?.Schemas == null)
+            return;
+
         var visited = new HashSet<string>();
         foreach (var schema in document.Components.Schemas)
         {
@@ -31,7 +34,10 @@ public class EnumAnalyzer : IEnumAnalyzer
         // Prevent infinite recursion by tracking visited schemas
         if (schema is OpenApiSchemaReference refSchema)
         {
-            var refPath = refSchema.Id;
+            string? refPath = refSchema.Id;
+            if (refPath == null)
+                return;
+
             if (!visited.Add(refPath))
             {
                 return; // Skip if we've already visited this schema
@@ -75,7 +81,8 @@ public class EnumAnalyzer : IEnumAnalyzer
             }
 
             // Check for boolean enums
-            if (schema.Enum.All(e => e is bool))
+            if (schema.Enum.OfType<System.Text.Json.Nodes.JsonValue>()
+                           .All(value => value.TryGetValue(out bool _)))
             {
                 issues.Add(new OpenApiDiagnosticIssue
                 {

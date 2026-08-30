@@ -10,18 +10,14 @@ using Microsoft.OpenApi;
 using Soenneker.Extensions.Task;
 using Soenneker.Extensions.ValueTask;
 using Soenneker.OpenApi.Diagnostics.Abstract;
-using Soenneker.OpenApi.Diagnostics.Analyzers.Abstract;
 using Soenneker.OpenApi.Diagnostics.Models;
 using Soenneker.Utils.File.Abstract;
 using Soenneker.Utils.PooledStringBuilders;
 
 namespace Soenneker.OpenApi.Diagnostics;
 
-/// <inheritdoc cref="IOpenApiDiagnostics"/>
 public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
 {
-    private readonly ISchemaAnalyzer _schemaAnalyzer;
-    private readonly IPathAnalyzer _pathAnalyzer;
     private readonly IFileUtil _fileUtil;
 
     private static readonly Regex PathParameterRegex = new(@"\{([^}]+)\}", RegexOptions.Compiled);
@@ -38,10 +34,8 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
         "uint", "ulong", "unchecked", "unsafe", "ushort", "using", "virtual", "void", "volatile", "while"
     };
 
-    public OpenApiDiagnostics(ISchemaAnalyzer schemaAnalyzer, IPathAnalyzer pathAnalyzer, IFileUtil fileUtil)
+    public OpenApiDiagnostics(IFileUtil fileUtil)
     {
-        _schemaAnalyzer = schemaAnalyzer;
-        _pathAnalyzer = pathAnalyzer;
         _fileUtil = fileUtil;
     }
 
@@ -51,23 +45,7 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
         try
         {
             using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(openApiJson));
-            var (document, diagnostic) = await OpenApiDocument.LoadAsync(stream);
-            if (diagnostic is not null && diagnostic.Errors is not null && diagnostic.Errors.Any())
-            {
-                foreach (var error in diagnostic.Errors)
-                {
-                    issues.Add(new OpenApiDiagnosticIssue
-                    {
-                        Severity = DiagnosticSeverity.Error,
-                        Category = DiagnosticCategory.Structure,
-                        Code = "PARSE_ERROR",
-                        Message = error.Message,
-                        Location = error.Pointer
-                    });
-                }
-                return issues;
-            }
-            return await AnalyzeDocument(document);
+            return await Analyze(stream);
         }
         catch (Exception ex)
         {
@@ -89,97 +67,11 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
         return await Analyze(json).NoSync();
     }
 
-    /// <summary>
-    /// Analyzes an OpenAPI document
-    /// </summary>
-    private async ValueTask<List<OpenApiDiagnosticIssue>> AnalyzeDocument(OpenApiDocument document)
-    {
-        var issues = new List<OpenApiDiagnosticIssue>();
-        try
-        {
-            await AnalyzeDocumentStructure(document, issues);
-            await _schemaAnalyzer.AnalyzeSchemas(document, issues);
-            await _pathAnalyzer.AnalyzePaths(document, issues);
-            return issues;
-        }
-        catch (Exception ex)
-        {
-            issues.Add(new OpenApiDiagnosticIssue
-            {
-                Severity = DiagnosticSeverity.Error,
-                Category = DiagnosticCategory.Structure,
-                Code = "UNEXPECTED_ERROR",
-                Message = $"Unexpected error: {ex.Message}",
-                Location = ""
-            });
-            return issues;
-        }
-    }
-
-    /// <summary>
-    /// Analyzes the basic structure of the OpenAPI document
-    /// </summary>
-    private async Task AnalyzeDocumentStructure(OpenApiDocument document, List<OpenApiDiagnosticIssue> issues)
-    {
-        if (string.IsNullOrEmpty(document.Info?.Version))
-        {
-            issues.Add(new OpenApiDiagnosticIssue
-            {
-                Severity = DiagnosticSeverity.Error,
-                Category = DiagnosticCategory.Structure,
-                Code = "MISSING_VERSION",
-                Message = "OpenAPI version is missing",
-                Location = "info.version"
-            });
-        }
-
-        if (string.IsNullOrEmpty(document.Info?.Title))
-        {
-            issues.Add(new OpenApiDiagnosticIssue
-            {
-                Severity = DiagnosticSeverity.Warning,
-                Category = DiagnosticCategory.Structure,
-                Code = "MISSING_TITLE",
-                Message = "API title is missing",
-                Location = "info.title"
-            });
-        }
-
-        if (string.IsNullOrEmpty(document.Info?.Description))
-        {
-            issues.Add(new OpenApiDiagnosticIssue
-            {
-                Severity = DiagnosticSeverity.Warning,
-                Category = DiagnosticCategory.Structure,
-                Code = "MISSING_DESCRIPTION",
-                Message = "API description is missing",
-                Location = "info.description"
-            });
-        }
-
-        if (document.Servers == null || !document.Servers.Any())
-        {
-            issues.Add(new OpenApiDiagnosticIssue
-            {
-                Severity = DiagnosticSeverity.Warning,
-                Category = DiagnosticCategory.Structure,
-                Code = "NO_SERVERS",
-                Message = "No servers defined in the OpenAPI document",
-                Location = "servers"
-            });
-        }
-    }
-
-    /// <summary>
-    /// Analyzes openAPI Diagnostics.
-    /// </summary>
-    /// <param name="openApiStream">Open API Stream for the analyze operation.</param>
-    /// <returns>A task whose result is the collection returned by analyze.</returns>
     public async Task<List<OpenApiDiagnosticIssue>> Analyze(Stream openApiStream)
     {
         var (document, diagnostic) = await OpenApiDocument.LoadAsync(openApiStream);
         var issues = new List<OpenApiDiagnosticIssue>();
-        if (diagnostic is not null && diagnostic.Errors is not null && diagnostic.Errors.Any())
+        if (diagnostic?.Errors is {Count: > 0})
         {
             return diagnostic.Errors.Select(error => new OpenApiDiagnosticIssue
                          {
@@ -187,19 +79,28 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
                              Category = DiagnosticCategory.Structure,
                              Code = "PARSE_ERROR",
                              Message = error.Message,
-                             Location = error.Pointer
+                             Location = error.Pointer ?? string.Empty
                          })
                          .ToList();
         }
 
-        return await AnalyzeDocument(document);
+        if (document == null)
+        {
+            issues.Add(new OpenApiDiagnosticIssue
+            {
+                Severity = DiagnosticSeverity.Error,
+                Category = DiagnosticCategory.Structure,
+                Code = "PARSE_ERROR",
+                Message = "The OpenAPI document could not be parsed.",
+                Location = string.Empty
+            });
+
+            return issues;
+        }
+
+        return Analyze(document);
     }
 
-    /// <summary>
-    /// Analyzes openAPI Diagnostics.
-    /// </summary>
-    /// <param name="fileInfo">File Info for the analyze operation.</param>
-    /// <returns>A task whose result is the collection returned by analyze.</returns>
     public async Task<List<OpenApiDiagnosticIssue>> Analyze(FileInfo fileInfo)
     {
         if (!fileInfo.Exists)
@@ -220,11 +121,6 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
         return await Analyze(stream);
     }
 
-    /// <summary>
-    /// Analyzes openAPI Diagnostics.
-    /// </summary>
-    /// <param name="document">Document to read, persist, or update.</param>
-    /// <returns>The collection produced by analyze.</returns>
     public List<OpenApiDiagnosticIssue> Analyze(OpenApiDocument document)
     {
         try
@@ -309,15 +205,15 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
             IOpenApiPathItem pathItem = path.Value;
             string pathLocation = $"paths.{pathKey}";
 
-            if (!pathKey.StartsWith("/"))
+            if (!pathKey.StartsWith("/", StringComparison.Ordinal))
                 context.AddIssue(DiagnosticSeverity.Error, DiagnosticCategory.Path, "INVALID_PATH_START", "Path must start with a '/' character.",
                     pathLocation);
 
             HashSet<string> pathPlaceholders = PathParameterRegex.Matches(pathKey).Cast<Match>().Select(m => m.Groups[1].Value).ToHashSet();
 
-            HashSet<string?> pathLevelParams = pathItem.Parameters.Select(p => p.Name).ToHashSet();
+            IEnumerable<IOpenApiParameter> pathParameters = pathItem.Parameters ?? [];
 
-            foreach (KeyValuePair<HttpMethod, OpenApiOperation> operation in pathItem.Operations)
+            foreach (KeyValuePair<HttpMethod, OpenApiOperation> operation in pathItem.Operations ?? [])
             {
                 OpenApiOperation op = operation.Value;
                 string opType = operation.Key.ToString().ToLowerInvariant();
@@ -326,13 +222,19 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
                 AnalyzeOperation(context, op, opType, pathKey, opLocation);
 
                 // Validate path parameters are correctly defined for the operation
-                Dictionary<(string? Name, ParameterLocation? In), IOpenApiParameter> allParams = op.Parameters.ToDictionary(p => (p.Name, p.In), p => p);
-                foreach (OpenApiParameter pathParam in pathItem.Parameters)
+                var allParams = new Dictionary<(string? Name, ParameterLocation? In), IOpenApiParameter>();
+
+                foreach (IOpenApiParameter operationParameter in op.Parameters ?? [])
+                    allParams.TryAdd((operationParameter.Name, operationParameter.In), operationParameter);
+
+                foreach (IOpenApiParameter pathParam in pathParameters)
                 {
                     allParams.TryAdd((pathParam.Name, pathParam.In), pathParam);
                 }
 
-                HashSet<string?> definedPathParams = allParams.Values.Where(p => p.In == ParameterLocation.Path).Select(p => p.Name).ToHashSet();
+                HashSet<string> definedPathParams = allParams.Values.Where(p => p.In == ParameterLocation.Path && !string.IsNullOrWhiteSpace(p.Name))
+                                                                  .Select(p => p.Name!)
+                                                                  .ToHashSet(StringComparer.Ordinal);
 
                 IEnumerable<string> missingParams = pathPlaceholders.Except(definedPathParams);
                 foreach (string missing in missingParams)
@@ -340,8 +242,8 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
                         $"Path '{pathKey}' specifies placeholder '{{{missing}}}' but it is not defined as a path parameter for the operation.", opLocation,
                         componentName: op.OperationId);
 
-                IEnumerable<string?> extraParams = definedPathParams.Except(pathPlaceholders);
-                foreach (string? extra in extraParams)
+                IEnumerable<string> extraParams = definedPathParams.Except(pathPlaceholders);
+                foreach (string extra in extraParams)
                     context.AddIssue(DiagnosticSeverity.Error, DiagnosticCategory.Path, "UNDEFINED_PATH_PARAMETER",
                         $"Operation defines path parameter '{extra}' but it is not present as a placeholder in the path '{pathKey}'.",
                         $"{opLocation}.parameters", componentName: op.OperationId);
@@ -380,7 +282,7 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
         AnalyzeResponses(context, op.Responses, op.OperationId, opLocation);
     }
 
-    private void AnalyzeParameters(AnalysisContext context, IList<IOpenApiParameter> parameters, string operationId, string location)
+    private void AnalyzeParameters(AnalysisContext context, IList<IOpenApiParameter>? parameters, string? operationId, string location)
     {
         if (parameters == null) return;
 
@@ -417,7 +319,7 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
         }
     }
 
-    private void AnalyzeResponses(AnalysisContext context, OpenApiResponses responses, string operationId, string opLocation)
+    private void AnalyzeResponses(AnalysisContext context, OpenApiResponses? responses, string? operationId, string opLocation)
     {
         if (responses == null || !responses.Any())
         {
@@ -443,7 +345,7 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
         }
     }
 
-    private void AnalyzeContent(AnalysisContext context, IDictionary<string, IOpenApiMediaType> content, string location, string operationId, bool isRequest)
+    private void AnalyzeContent(AnalysisContext context, IDictionary<string, IOpenApiMediaType>? content, string location, string? operationId, bool isRequest)
     {
         if (content == null || !content.Any())
         {
@@ -528,7 +430,7 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
         {
             foreach (var prop in schema.Properties.Values)
             {
-                if (prop is OpenApiSchemaReference propRef)
+                if (prop is OpenApiSchemaReference {Id: not null} propRef)
                 {
                     dependencies.Add(propRef.Id);
                 }
@@ -536,7 +438,7 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
         }
 
         // Check array items
-        if (schema.Items is OpenApiSchemaReference itemsRef)
+        if (schema.Items is OpenApiSchemaReference {Id: not null} itemsRef)
         {
             dependencies.Add(itemsRef.Id);
         }
@@ -548,7 +450,7 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
 
         foreach (var compSchema in compositionSchemas)
         {
-            if (compSchema is OpenApiSchemaReference compRef)
+            if (compSchema is OpenApiSchemaReference {Id: not null} compRef)
             {
                 dependencies.Add(compRef.Id);
             }
@@ -599,7 +501,8 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
 
         if (schema.Enum != null)
         {
-            if (schema.Type == JsonSchemaType.String && schema.Enum.OfType<string>().Any(s => string.IsNullOrWhiteSpace(s)))
+            if (schema.Type == JsonSchemaType.String && schema.Enum.OfType<JsonValue>()
+                                                                .Any(value => value.TryGetValue(out string? text) && string.IsNullOrWhiteSpace(text)))
             {
                 context.AddIssue(DiagnosticSeverity.Error, DiagnosticCategory.Kiota, "EMPTY_ENUM_VALUE",
                     $"Enum in schema '{schemaName}' contains an empty or whitespace-only string value. This is invalid and will cause code generators to crash.",
@@ -670,10 +573,10 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
     {
         if (context.Document.Tags == null) return;
 
-        var definedTags = new HashSet<string>(context.Document.Tags.Select(t => t.Name), StringComparer.Ordinal);
+        var definedTags = new HashSet<string>(context.Document.Tags.Select(t => t.Name).OfType<string>(), StringComparer.Ordinal);
         if (!definedTags.Any()) return;
 
-        foreach (OpenApiOperation op in context.Document.Paths.Values.SelectMany(p => p.Operations.Values))
+        foreach (OpenApiOperation op in context.Document.Paths.Values.SelectMany(p => p.Operations?.Values ?? Enumerable.Empty<OpenApiOperation>()))
         {
             if (op.Tags == null || !op.Tags.Any())
             {
@@ -684,7 +587,7 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
 
             foreach (OpenApiTagReference tag in op.Tags)
             {
-                if (!definedTags.Contains(tag.Name))
+                if (tag.Name != null && !definedTags.Contains(tag.Name))
                 {
                     context.AddIssue(DiagnosticSeverity.Warning, DiagnosticCategory.Other, "UNDEFINED_TAG",
                         $"Operation '{op.OperationId}' uses tag '{tag.Name}' which is not defined in the global tags list.", $"paths", op.OperationId);
@@ -721,6 +624,9 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
 
     private async Task AnalyzeEnums(OpenApiDocument document, List<OpenApiDiagnosticIssue> issues)
     {
+        if (document.Components?.Schemas == null)
+            return;
+
         foreach (KeyValuePair<string, IOpenApiSchema> schema in document.Components.Schemas)
         {
             await AnalyzeSchemaEnums(schema.Key, schema.Value, issues);
@@ -761,7 +667,7 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
                     ComponentType = "schema"
                 });
             }
-            if (schema.Enum.All(e => e is bool))
+            if (schema.Enum.OfType<JsonValue>().All(value => value.TryGetValue(out bool _)))
             {
                 issues.Add(new OpenApiDiagnosticIssue
                 {

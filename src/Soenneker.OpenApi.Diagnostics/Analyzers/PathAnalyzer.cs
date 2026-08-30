@@ -73,7 +73,7 @@ public class PathAnalyzer : IPathAnalyzer
         }
 
         // Check operations
-        if (!pathItem.Operations.Any())
+        if (pathItem.Operations == null || !pathItem.Operations.Any())
         {
             issues.Add(new OpenApiDiagnosticIssue
             {
@@ -87,7 +87,7 @@ public class PathAnalyzer : IPathAnalyzer
             });
         }
 
-        foreach (KeyValuePair<HttpMethod, OpenApiOperation> operation in pathItem.Operations)
+        foreach (KeyValuePair<HttpMethod, OpenApiOperation> operation in pathItem.Operations ?? [])
         {
             await AnalyzeOperation(path, operation.Key, operation.Value, issues);
         }

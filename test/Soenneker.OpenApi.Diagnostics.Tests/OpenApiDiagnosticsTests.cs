@@ -1,10 +1,8 @@
 using System.Collections.Generic;
-using Soenneker.Tests.Attributes.Local;
+using AwesomeAssertions;
 using Soenneker.Tests.HostedUnit;
-using System.Threading.Tasks;
-using Soenneker.Utils.Json;
-using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using Soenneker.OpenApi.Diagnostics.Abstract;
 using Soenneker.OpenApi.Diagnostics.Models;
 
@@ -26,20 +24,24 @@ public sealed class OpenApiDiagnosticsTests : HostedUnitTest
 
     }
 
-    [LocalOnly]
-    public async ValueTask AnalyzeFile()
+    [Test]
+    public async ValueTask Analyze_returns_client_generation_issues_for_json()
     {
-        List<OpenApiDiagnosticIssue> issues = await _util.AnalyzeFile(@"c:\cloudflare\spec3fixed.json");
+        const string json = """
+                            {
+                              "openapi": "3.0.3",
+                              "info": { "title": "Example", "version": "1.0" },
+                              "paths": {
+                                "/items": {
+                                  "get": { "responses": { "200": { "description": "OK" } } }
+                                }
+                              }
+                            }
+                            """;
 
-        List<OpenApiDiagnosticIssue> errors = issues.Where(x => x.Severity == DiagnosticSeverity.Error && x.Category != DiagnosticCategory.Naming).ToList();
+        List<OpenApiDiagnosticIssue> issues = await _util.Analyze(json);
 
-        string? output = JsonUtil.Serialize(errors, Enums.JsonOptions.JsonOptionType.Pretty, Enums.JsonLibrary.JsonLibraryType.SystemTextJson);
-
-        File.Delete("c:\\cloudflare\\problems.txt");
-
-        await File.WriteAllTextAsync(@"c:\cloudflare\problems.txt", output, System.Threading.CancellationToken.None);
-
-       // Logger.LogInformation(output);
+        issues.Any(issue => issue.Code == "MISSING_OPERATION_ID").Should().BeTrue();
     }
 }
 

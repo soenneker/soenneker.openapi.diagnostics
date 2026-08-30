@@ -38,16 +38,16 @@ public class OpenApiDiagnosticIssue
     /// <summary>
     /// The path to the component where the issue was found
     /// </summary>
-    public string ComponentPath { get; set; } = string.Empty;
+    public string? ComponentPath { get; set; }
 
     /// <summary>
     /// The name of the component where the issue was found
     /// </summary>
-    public string ComponentName { get; set; } = string.Empty;
+    public string? ComponentName { get; set; }
 
     /// <summary>
     /// The type of component where the issue was found
     /// </summary>
-    public string ComponentType { get; set; } = string.Empty;
+    public string? ComponentType { get; set; }
 }
 

@@ -5,41 +5,7 @@
 
 # ![](https://user-images.githubusercontent.com/4441470/224455560-91ed3ee7-f510-4041-a8d2-3fc093025112.png) Soenneker.OpenApi.Diagnostics
 
-A comprehensive OpenAPI document diagnostic utility that helps identify issues that could affect client generation and API documentation.
-
-## Features
-
-### Top-Level Showstopper Issues
-- Empty or Invalid OperationId detection
-- Invalid $ref identifier validation
-- Empty enum array detection
-- Schema name conflict detection
-- Polymorphic type validation
-- Path parameter validation
-- Recursive model validation
-- Default value validation
-- Empty schema detection
-
-### Mid-Level Problems
-- allOf usage validation
-- Name collision detection
-- Schema combination validation
-- Format/type combination validation
-- OpenAPI version validation
-
-### Subtle Problems
-- Discriminator mapping validation
-- Description/summary validation
-- Parameter/response reference validation
-- Media type validation
-- Request body validation
-
-### Kiota-Specific Issues
-- File size validation
-- Empty key detection
-- Nullable property validation
-- Enum type validation
-- Discriminator property validation
+Analyze OpenAPI documents for structural problems and patterns that commonly break generated clients.
 
 ## Installation
 
@@ -47,98 +13,64 @@ A comprehensive OpenAPI document diagnostic utility that helps identify issues t
 dotnet add package Soenneker.OpenApi.Diagnostics
 ```
 
-## Usage
-
-### Basic Usage
+## Registration
 
 ```csharp
 using Microsoft.Extensions.DependencyInjection;
-using Soenneker.OpenApi.Diagnostics;
-using Soenneker.OpenApi.Diagnostics.Abstract;
+using Soenneker.OpenApi.Diagnostics.Registrars;
 
-// Register the service
 services.AddOpenApiDiagnostics();
+```
 
-// Use the service
-public class MyService
+`AddOpenApiDiagnostics()` registers the analyzer as a singleton. Use `AddOpenApiDiagnosticsAsScoped()` when the analyzer should follow a dependency-injection scope.
+
+## Analyze JSON
+
+Inject `IOpenApiDiagnostics` and pass a complete JSON document:
+
+```csharp
+using Soenneker.OpenApi.Diagnostics.Abstract;
+using Soenneker.OpenApi.Diagnostics.Models;
+
+List<OpenApiDiagnosticIssue> issues = await diagnostics.Analyze(openApiJson);
+
+foreach (OpenApiDiagnosticIssue issue in issues)
 {
-    private readonly IOpenApiDiagnostics _diagnostics;
-
-    public MyService(IOpenApiDiagnostics diagnostics)
-    {
-        _diagnostics = diagnostics;
-    }
-
-    public async Task AnalyzeOpenApiDocument(string jsonContent)
-    {
-        var issues = await _diagnostics.AnalyzeJson(jsonContent);
-        
-        foreach (var issue in issues)
-        {
-            Console.WriteLine($"Severity: {issue.Severity}");
-            Console.WriteLine($"Category: {issue.Category}");
-            Console.WriteLine($"Code: {issue.Code}");
-            Console.WriteLine($"Message: {issue.Message}");
-            Console.WriteLine($"Location: {issue.Location}");
-            if (issue.Details != null)
-                Console.WriteLine($"Details: {issue.Details}");
-            Console.WriteLine();
-        }
-    }
+    Console.WriteLine($"{issue.Severity} {issue.Code} at {issue.Location}: {issue.Message}");
 }
 ```
 
-### Analyzing a File
+Parse failures are returned as `PARSE_ERROR` issues rather than thrown. Unexpected analysis failures are returned as `UNEXPECTED_ERROR` or `UNEXPECTED_ANALYSIS_ERROR` issues.
+
+## Analyze a file
 
 ```csharp
-var issues = await _diagnostics.AnalyzeFile("path/to/openapi.json");
+List<OpenApiDiagnosticIssue> issues = await diagnostics.AnalyzeFile("openapi.json");
 ```
 
-### Analyzing a Document
+You can also analyze a `FileInfo`, a readable `Stream`, or an already parsed `OpenApiDocument` through the corresponding `Analyze` overload. Stream ownership remains with the caller.
 
-```csharp
-var document = new OpenApiDocument();
-// ... populate document ...
-var issues = await _diagnostics.AnalyzeDocument(document);
-```
+## What is checked
 
-## Diagnostic Categories
+Diagnostics cover:
 
-The library categorizes issues into the following categories:
+- required document metadata, paths, operations, and responses
+- missing, invalid, or duplicate operation IDs
+- path placeholders and path-parameter definitions
+- duplicate parameters and missing parameter schemas
+- inline complex schemas and binary schemas in JSON media types
+- schema names, C# keyword collisions, and normalized-name collisions
+- discriminator requirements and `oneOf` usage relevant to Kiota
+- empty enum values and untyped object schemas
+- circular component dependencies
+- OAuth flow definitions and undefined operation tags
 
-- OperationId
-- Reference
-- Enum
-- SchemaNaming
-- PolymorphicType
-- PathParameter
-- RecursiveModel
-- DefaultValue
-- EmptySchema
-- SchemaCombination
-- FormatType
-- Version
-- Discriminator
-- Description
-- MediaType
-- RequestBody
-- FileSize
-- EmptyKey
-- Nullable
-- Other
+Each issue includes a stable `Code`, `Severity`, `Category`, human-readable `Message`, and document `Location`. Component fields are populated when the issue belongs to a specific component.
 
-## Severity Levels
+## Interpreting results
 
-Issues are classified into three severity levels:
+- `Error` identifies an invalid construct or a condition expected to break supported generation scenarios.
+- `Warning` identifies a risky or weakly typed construct that may still be accepted.
+- `Info` identifies non-blocking contract quality issues.
 
-- Error: Critical issues that will prevent client generation
-- Warning: Issues that may cause problems but won't prevent generation
-- Info: Issues that may affect functionality but are not critical
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+The analyzer is intentionally opinionated about generated-client compatibility, especially Kiota. A clean result is not a substitute for validating the contract against the running API or testing the generated client.

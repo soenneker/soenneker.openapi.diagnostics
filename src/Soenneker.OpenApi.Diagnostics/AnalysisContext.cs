@@ -22,7 +22,7 @@ internal class AnalysisContext
     }
 
     public void AddIssue(DiagnosticSeverity severity, DiagnosticCategory category, string code, string message, string location,
-        string componentName = null, string componentPath = null, string componentType = null)
+        string? componentName = null, string? componentPath = null, string? componentType = null)
     {
         Issues.Add(new OpenApiDiagnosticIssue
         {
