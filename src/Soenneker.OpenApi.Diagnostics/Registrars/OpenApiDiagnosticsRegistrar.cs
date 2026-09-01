@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Soenneker.OpenApi.Diagnostics.Abstract;
 using Soenneker.Utils.File.Registrars;
+using Soenneker.Utils.MemoryStream.Registrars;
 
 namespace Soenneker.OpenApi.Diagnostics.Registrars;
 
@@ -18,6 +19,7 @@ public static class OpenApiDiagnosticsRegistrar
     public static IServiceCollection AddOpenApiDiagnostics(this IServiceCollection services)
     {
         services.AddFileUtilAsSingleton();
+        services.AddMemoryStreamUtilAsSingleton();
         services.TryAddSingleton<IOpenApiDiagnostics, OpenApiDiagnostics>();
 
         return services;
@@ -31,6 +33,7 @@ public static class OpenApiDiagnosticsRegistrar
     public static IServiceCollection AddOpenApiDiagnosticsAsScoped(this IServiceCollection services)
     {
         services.AddFileUtilAsScoped();
+        services.AddMemoryStreamUtilAsScoped();
         services.TryAddScoped<IOpenApiDiagnostics, OpenApiDiagnostics>();
 
         return services;

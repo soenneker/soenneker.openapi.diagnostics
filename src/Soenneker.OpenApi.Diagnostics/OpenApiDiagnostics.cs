@@ -13,12 +13,14 @@ using Soenneker.OpenApi.Diagnostics.Abstract;
 using Soenneker.OpenApi.Diagnostics.Models;
 using Soenneker.Utils.File.Abstract;
 using Soenneker.Utils.PooledStringBuilders;
+using Soenneker.Utils.MemoryStream.Abstract;
 
 namespace Soenneker.OpenApi.Diagnostics;
 
 public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
 {
     private readonly IFileUtil _fileUtil;
+    private readonly IMemoryStreamUtil _memoryStreamUtil;
 
     private static readonly Regex PathParameterRegex = new(@"\{([^}]+)\}", RegexOptions.Compiled);
     private static readonly Regex ValidIdentifierRegex = new(@"^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.Compiled);
@@ -34,9 +36,10 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
         "uint", "ulong", "unchecked", "unsafe", "ushort", "using", "virtual", "void", "volatile", "while"
     };
 
-    public OpenApiDiagnostics(IFileUtil fileUtil)
+    public OpenApiDiagnostics(IFileUtil fileUtil, IMemoryStreamUtil memoryStreamUtil)
     {
         _fileUtil = fileUtil;
+        _memoryStreamUtil = memoryStreamUtil;
     }
 
     public async ValueTask<List<OpenApiDiagnosticIssue>> Analyze(string openApiJson)
@@ -44,8 +47,8 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
         var issues = new List<OpenApiDiagnosticIssue>();
         try
         {
-            using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(openApiJson));
-            return await Analyze(stream);
+            using MemoryStream stream = await _memoryStreamUtil.Get(openApiJson).NoSync();
+            return await Analyze(stream).NoSync();
         }
         catch (Exception ex)
         {
