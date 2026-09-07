@@ -517,16 +517,18 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
 
     private void AnalyzeCircularDependencies(AnalysisContext context)
     {
-        List<string> nodes = context.SchemaDependencies.Keys.ToList();
-        foreach (string node in nodes)
-        {
-            var path = new List<string>();
-            FindCycles(node, path, context);
-        }
+        var acyclicNodes = new HashSet<string>(StringComparer.Ordinal);
+        var path = new List<string>();
+        foreach (string node in context.SchemaDependencies.Keys)
+            FindCycles(node, path, context, acyclicNodes);
     }
 
-    private void FindCycles(string currentNode, List<string> path, AnalysisContext context)
+    private bool FindCycles(string currentNode, List<string> path, AnalysisContext context, HashSet<string> acyclicNodes)
     {
+        if (acyclicNodes.Contains(currentNode))
+            return false;
+
+        bool reachesCycle = false;
         path.Add(currentNode);
 
         if (context.SchemaDependencies.TryGetValue(currentNode, out HashSet<string>? dependencies))
@@ -536,6 +538,7 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
                 int cycleStartIndex = path.IndexOf(dependency);
                 if (cycleStartIndex != -1)
                 {
+                    reachesCycle = true;
                     List<string> cycle = path.GetRange(cycleStartIndex, path.Count - cycleStartIndex);
                     cycle.Add(dependency); // Close the loop
 
@@ -551,12 +554,15 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
                 }
                 else
                 {
-                    FindCycles(dependency, path, context);
+                    reachesCycle |= FindCycles(dependency, path, context, acyclicNodes);
                 }
             }
         }
 
         path.RemoveAt(path.Count - 1);
+        if (!reachesCycle)
+            acyclicNodes.Add(currentNode);
+        return reachesCycle;
     }
 
     private void AnalyzeSecurity(AnalysisContext context)
