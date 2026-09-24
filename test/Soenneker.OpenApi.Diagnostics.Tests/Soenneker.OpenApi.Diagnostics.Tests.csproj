@@ -18,7 +18,6 @@
 
     <ItemGroup>
         <PackageReference Include="Soenneker.Tests.Attributes.Local" Version="4.0.116" />
-        <PackageReference Include="Soenneker.Utils.Json" Version="4.0.2713" />
         <PackageReference Include="Soenneker.Utils.Test" Version="4.0.330" />
         <PackageReference Include="Soenneker.Tests.HostedUnit" Version="4.0.285" />
         <PackageReference Include="TUnit" Version="1.69.0" />
@@ -26,5 +25,8 @@
 
     <ItemGroup>
         <ProjectReference Include="..\..\src\Soenneker.OpenApi.Diagnostics\Soenneker.OpenApi.Diagnostics.csproj" />
+    </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="AwesomeAssertions" Version="9.6.0" />
     </ItemGroup>
 </Project>
