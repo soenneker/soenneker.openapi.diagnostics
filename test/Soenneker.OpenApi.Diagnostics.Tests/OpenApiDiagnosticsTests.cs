@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Soenneker.OpenApi.Diagnostics.Abstract;
 using Soenneker.OpenApi.Diagnostics.Models;
+using System.Threading;
 
 namespace Soenneker.OpenApi.Diagnostics.Tests;
 
@@ -25,7 +26,7 @@ public sealed class OpenApiDiagnosticsTests : HostedUnitTest
     }
 
     [Test]
-    public async ValueTask Analyze_returns_client_generation_issues_for_json()
+    public async ValueTask Analyze_returns_client_generation_issues_for_json(CancellationToken cancellationToken)
     {
         const string json = """
                             {
