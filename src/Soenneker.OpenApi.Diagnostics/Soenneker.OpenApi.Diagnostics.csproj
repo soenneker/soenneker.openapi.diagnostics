@@ -4,6 +4,7 @@
         <Features>$(Features);runtime-async=on</Features>
         <IsAotCompatible>true</IsAotCompatible>
         <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
         <Platforms>AnyCPU</Platforms>
         <NoWarn>$(NoWarn);1591</NoWarn>
     </PropertyGroup>
@@ -46,6 +47,12 @@
     </ItemGroup>
 
     <ItemGroup>
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
+        <PackageReference Include="Microsoft.Kiota.Http.HttpClientLibrary" Version="2.1.2" />
+        <PackageReference Include="Microsoft.Kiota.Serialization.Json" Version="2.1.2" />
+        <PackageReference Include="Microsoft.Kiota.Serialization.Form" Version="2.1.2" />
+        <PackageReference Include="Microsoft.Kiota.Serialization.Multipart" Version="2.1.2" />
+        <PackageReference Include="Microsoft.Kiota.Serialization.Text" Version="2.1.2" />
         <PackageReference Include="Microsoft.OpenApi" Version="3.11.0" />
         <PackageReference Include="Soenneker.Utils.File" Version="11.0.2329" />
     </ItemGroup>

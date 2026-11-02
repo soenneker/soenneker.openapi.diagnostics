@@ -8,7 +8,6 @@ using System;
 
 namespace Soenneker.OpenApi.Diagnostics.Analyzers;
 
-/// <inheritdoc cref="ISchemaAnalyzer"/>
 public class SchemaAnalyzer : ISchemaAnalyzer
 {
     private readonly IEnumAnalyzer _enumAnalyzer;

@@ -1,0 +1,16 @@
+using System;
+using System.Collections.Generic;
+using Microsoft.Kiota.Abstractions.Serialization;
+
+namespace Soenneker.OpenApi.Diagnostics.Tests.Fixtures;
+
+public sealed class LossyModel : IParsable
+{
+    public string? Name { get; set; }
+    public static LossyModel CreateFromDiscriminatorValue(IParseNode node) => new();
+    public IDictionary<string, Action<IParseNode>> GetFieldDeserializers() => new Dictionary<string, Action<IParseNode>>
+    {
+        ["name"] = node => Name = node.GetStringValue()
+    };
+    public void Serialize(ISerializationWriter writer) { }
+}

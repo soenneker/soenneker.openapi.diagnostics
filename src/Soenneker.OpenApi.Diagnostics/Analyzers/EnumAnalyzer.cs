@@ -7,7 +7,6 @@ using Soenneker.OpenApi.Diagnostics.Models;
 
 namespace Soenneker.OpenApi.Diagnostics.Analyzers;
 
-/// <inheritdoc cref="IEnumAnalyzer"/>
 public class EnumAnalyzer : IEnumAnalyzer
 {
     public async Task AnalyzeEnums(OpenApiDocument document, List<OpenApiDiagnosticIssue> issues)

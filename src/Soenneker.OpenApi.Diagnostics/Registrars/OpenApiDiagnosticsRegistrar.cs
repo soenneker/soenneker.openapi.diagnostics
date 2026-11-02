@@ -21,6 +21,10 @@ public static class OpenApiDiagnosticsRegistrar
         services.AddFileUtilAsSingleton();
         services.AddMemoryStreamUtilAsSingleton();
         services.TryAddSingleton<IOpenApiDiagnostics, OpenApiDiagnostics>();
+        services.TryAddSingleton<IOpenApiGeneratedCodeDiagnostics, OpenApiGeneratedCodeDiagnostics>();
+        services.TryAddSingleton<IOpenApiRuntimeDiagnostics, OpenApiRuntimeDiagnostics>();
+        services.TryAddSingleton<IKiotaLogDiagnostics, KiotaLogDiagnostics>();
+
 
         return services;
     }
@@ -35,6 +39,10 @@ public static class OpenApiDiagnosticsRegistrar
         services.AddFileUtilAsScoped();
         services.AddMemoryStreamUtilAsScoped();
         services.TryAddScoped<IOpenApiDiagnostics, OpenApiDiagnostics>();
+        services.TryAddScoped<IOpenApiGeneratedCodeDiagnostics, OpenApiGeneratedCodeDiagnostics>();
+        services.TryAddScoped<IOpenApiRuntimeDiagnostics, OpenApiRuntimeDiagnostics>();
+        services.TryAddScoped<IKiotaLogDiagnostics, KiotaLogDiagnostics>();
+
 
         return services;
     }

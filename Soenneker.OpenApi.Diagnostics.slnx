@@ -8,6 +8,7 @@
     <File Path=".github/workflows/publish-package.yml" />
   </Folder>
   <Folder Name="/src/">
+    <Project Path="src/Soenneker.OpenApi.Diagnostics.Cli/Soenneker.OpenApi.Diagnostics.Cli.csproj" />
     <Project Path="src/Soenneker.OpenApi.Diagnostics/Soenneker.OpenApi.Diagnostics.csproj" />
   </Folder>
   <Folder Name="/test/">

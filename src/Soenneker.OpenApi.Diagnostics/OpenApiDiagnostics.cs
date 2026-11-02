@@ -17,7 +17,6 @@ using Soenneker.Utils.MemoryStream.Abstract;
 
 namespace Soenneker.OpenApi.Diagnostics;
 
-/// <inheritdoc cref="IOpenApiDiagnostics" />
 public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
 {
     private readonly IFileUtil _fileUtil;
