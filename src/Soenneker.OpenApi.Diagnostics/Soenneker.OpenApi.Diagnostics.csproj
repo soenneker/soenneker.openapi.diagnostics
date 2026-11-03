@@ -54,6 +54,6 @@
         <PackageReference Include="Microsoft.Kiota.Serialization.Multipart" Version="2.1.2" />
         <PackageReference Include="Microsoft.Kiota.Serialization.Text" Version="2.1.2" />
         <PackageReference Include="Microsoft.OpenApi" Version="3.11.0" />
-        <PackageReference Include="Soenneker.Utils.File" Version="11.0.2330" />
+        <PackageReference Include="Soenneker.Utils.File" Version="11.0.2331" />
     </ItemGroup>
 </Project>
