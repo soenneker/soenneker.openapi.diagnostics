@@ -221,7 +221,7 @@ public sealed class OpenApiRuntimeDiagnostics : IOpenApiRuntimeDiagnostics
     {
         var factory = (ParsableFactory<T>)typeof(T).GetMethod("CreateFromDiscriminatorValue", BindingFlags.Static | BindingFlags.Public)!
             .CreateDelegate(typeof(ParsableFactory<T>));
-        using var input = new MemoryStream(Encoding.UTF8.GetBytes(json));
+        using var input = new StringStream(json, Encoding.UTF8);
         IParseNode node = await new JsonParseNodeFactory().GetRootParseNodeAsync("application/json", input);
         T? value = node.GetObjectValue(factory);
         string[] expected = expectedType.Split('.', 2);
@@ -238,7 +238,7 @@ public sealed class OpenApiRuntimeDiagnostics : IOpenApiRuntimeDiagnostics
     {
         var factory = (ParsableFactory<T>)typeof(T).GetMethod("CreateFromDiscriminatorValue", BindingFlags.Static | BindingFlags.Public)!
             .CreateDelegate(typeof(ParsableFactory<T>));
-        using var input = new MemoryStream(Encoding.UTF8.GetBytes(json));
+        using var input = new StringStream(json, Encoding.UTF8);
         IParseNode node = await new JsonParseNodeFactory().GetRootParseNodeAsync("application/json", input);
         T? value = node.GetObjectValue(factory);
         using var writer = new JsonSerializationWriter();
