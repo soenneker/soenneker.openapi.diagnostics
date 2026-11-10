@@ -8,6 +8,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Soenneker.OpenApi.Diagnostics/Soenneker.OpenApi.Diagnostics.csproj" />
-    <PackageReference Include="Microsoft.Extensions.Logging" Version="11.0.0-rc.3.26522.148" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="11.0.0" />
   </ItemGroup>
 </Project>
