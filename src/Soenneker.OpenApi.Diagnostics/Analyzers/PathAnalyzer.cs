@@ -197,9 +197,9 @@ public class PathAnalyzer : IPathAnalyzer
             {
                 string paramName = segment.Substring(1, segment.Length - 2);
                 if (string.IsNullOrEmpty(paramName)) return false;
-                if (paramName.Contains("/")) return false;
+                if (paramName.Contains('/')) return false;
             }
-            else if (segment.Contains("{") || segment.Contains("}"))
+            else if (segment.Contains('{') || segment.Contains('}'))
             {
                 return false;
             }

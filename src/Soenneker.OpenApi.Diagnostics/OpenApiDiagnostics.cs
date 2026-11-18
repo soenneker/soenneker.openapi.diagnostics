@@ -208,7 +208,7 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
             IOpenApiPathItem pathItem = path.Value;
             string pathLocation = $"paths.{pathKey}";
 
-            if (!pathKey.StartsWith("/", StringComparison.Ordinal))
+            if (!pathKey.StartsWith('/'))
                 context.AddIssue(DiagnosticSeverity.Error, DiagnosticCategory.Path, "INVALID_PATH_START", "Path must start with a '/' character.",
                     pathLocation);
 
@@ -613,19 +613,12 @@ public sealed class OpenApiDiagnostics : IOpenApiDiagnostics
     {
         if (string.IsNullOrEmpty(name)) return string.Empty;
 
-        // Split by non-alphanumeric characters
-        List<string> parts = Regex.Split(name, @"[^\w]").Where(p => !string.IsNullOrEmpty(p)).ToList();
-
-        if (!parts.Any()) return string.Empty;
-
         using var pascalCaseBuilder = new PooledStringBuilder();
-        foreach (string part in parts)
+        foreach (ValueMatch match in Regex.EnumerateMatches(name, @"\w+"))
         {
-            pascalCaseBuilder.Append(char.ToUpperInvariant(part[0]));
-            if (part.Length > 1)
-            {
-                pascalCaseBuilder.Append(part.Substring(1));
-            }
+            ReadOnlySpan<char> word = name.AsSpan(match.Index, match.Length);
+            pascalCaseBuilder.Append(char.ToUpperInvariant(word[0]));
+            pascalCaseBuilder.Append(word[1..]);
         }
 
         return pascalCaseBuilder.ToString();
